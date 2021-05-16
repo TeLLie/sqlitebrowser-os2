@@ -337,6 +337,12 @@ endif(SQLB_TSS)
 qt5_add_resources(SQLB_RESOURCES_RCC ${SQLB_RESOURCES})
 
 #icon and correct libs/subsystem for windows
+if (OS2)
+enable_language(RC)
+set_source_files_properties("src/os2app.rc" PROPERTIES LANGUAGE RC) 
+set(SQLB_SRC ${SQLB_SRC} "src/os2app.rc")
+endif()
+
 if(WIN32)
         #enable version check for windows
         add_definitions(-DCHECKNEWVERSION)
@@ -378,7 +384,7 @@ else(EXTRAPATH)
 	find_library(LIBSQLITE ${LIBSQLITE_NAME})
 endif(EXTRAPATH)
 
-if(WIN32 AND MSVC)
+if(WIN32 AND MSVC AND OS2)
 	find_path(SQLITE3_INCLUDE_DIR sqlite3.h)
 	if(sqlcipher)
 		find_file(SQLITE3_DLL sqlcipher.dll)
@@ -471,6 +477,14 @@ else()
     target_link_libraries(${PROJECT_NAME} qscintilla2)
 endif()
 
+if(OS2)
+set_target_properties(sqlitebrowser PROPERTIES
+ OS2_DEF_VENDOR "TeLLie OS2"
+ OS2_DEF_PATCH "${qslitebrowsert_VERSION_PATCH}"
+ OS2_DEF_VERSION "${SQLITEBROWSER_VERSION}"
+ OS2_DEF_EXEType "WINDOWAPI")
+endif()
+
 if(WIN32 AND MSVC)
 	set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "DB Browser for SQLite")
 	set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE")
@@ -507,7 +521,7 @@ if(UNIX)
 		DESTINATION share/metainfo/)
 endif(UNIX)
 
-if(WIN32 AND MSVC)
+if(WIN32 AND MSVC AND OS2)
 	install(TARGETS ${PROJECT_NAME}
 		RUNTIME DESTINATION "/"
 		LIBRARY DESTINATION lib)
