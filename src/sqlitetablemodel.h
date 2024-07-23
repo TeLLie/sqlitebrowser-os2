@@ -27,7 +27,7 @@ class SqliteTableModel : public QAbstractTableModel
 #endif
 
 public:
-    explicit SqliteTableModel(DBBrowserDB& db, QObject *parent = nullptr, const QString& encoding = QString());
+    explicit SqliteTableModel(DBBrowserDB& db, QObject *parent = nullptr, const QString& encoding = QString(), bool force_wait = false);
     ~SqliteTableModel() override;
 
     /// reset to state after construction
@@ -35,6 +35,7 @@ public:
 
     /// returns logical amount of rows, whether currently cached or not
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    int realRowCount() const;
 
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     size_t filterCount() const;
@@ -80,7 +81,7 @@ public:
     QModelIndex dittoRecord(int old_row);
 
     /// configure for browsing results of specified query
-    void setQuery(const QString& sQuery, const QString& sCountQuery = QString(), bool dontClearHeaders = false);
+    void setQuery(const QString& sQuery);
 
     std::string query() const { return m_sQuery.toStdString(); }
     std::string customQuery(bool withRowid) const { return m_query.buildQuery(withRowid); }
@@ -89,7 +90,7 @@ public:
     void setQuery(const sqlb::Query& query);
 
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
-    void sort(const std::vector<sqlb::SortedColumn>& columns);
+    void sort(const std::vector<sqlb::OrderBy>& columns);
     sqlb::ObjectIdentifier currentTableName() const { return m_query.table(); }
 
     Qt::ItemFlags flags(const QModelIndex& index) const override;
@@ -104,7 +105,7 @@ public:
     bool hasPseudoPk() const;
     std::vector<std::string> pseudoPk() const { return m_query.rowIdColumns(); }
 
-    sqlb::ForeignKeyClause getForeignKeyClause(size_t column) const;
+    std::shared_ptr<sqlb::ForeignKeyClause> getForeignKeyClause(size_t column) const;
 
     // This returns true if the model and, if set, the index can be edited. Not specifying the index parameter asks whether the model can
     // be edited in general (i.e. inserting and deleting rows as well as updating some cells). Specifying the index parameter asks whether
@@ -116,8 +117,8 @@ public:
     // can be edited. This makes a difference for generated columns which are in (editable) tables but cannot be modified anyway.
     bool isEditable(const QModelIndex& index = QModelIndex()) const;
 
-    // Helper function for removing all comments from a SQL query
-    static void removeCommentsFromQuery(QString& query);
+    // Custom display format set?
+    bool hasDisplayFormat (const QModelIndex& index) const;
 
     // Conditional formats are of two kinds: regular conditional formats (including condition-free formats applying to any value in the
     // column) and formats applying to a particular row-id and which have always precedence over the first kind and whose filter apply
@@ -143,7 +144,7 @@ public:
     void reloadSettings();
 
 public slots:
-    void updateFilter(size_t column, const QString& value);
+    void updateFilter(const std::string& column, const QString& value);
     void updateGlobalFilter(const std::vector<QString>& values);
 
 signals:
@@ -165,10 +166,9 @@ private:
     void handleFinishedFetch(int life_id, unsigned int fetched_row_begin, unsigned int fetched_row_end);
     void handleRowCountComplete(int life_id, int num_rows);
 
-    void buildQuery();
+    void updateAndRunQuery();
 
-    /// \param pDb connection to query; if null, obtains it from 'm_db'.
-    std::vector<std::string> getColumns(std::shared_ptr<sqlite3> pDb, const std::string& sQuery, std::vector<int>& fieldsTypes) const;
+    void getColumnNames(const std::string& sQuery);
 
     QByteArray encode(const QByteArray& str) const;
     QByteArray decode(const QByteArray& str) const;
@@ -192,6 +192,7 @@ private:
     /// the full row count, when the row-count query returns)
     RowCount m_rowCountAvailable;
     unsigned int m_currentRowCount;
+    unsigned int m_realRowCount;
 
     std::vector<std::string> m_headers;
 
@@ -232,12 +233,15 @@ private:
     QString m_blobText;
     QColor m_regFgColour;
     QColor m_regBgColour;
+    QColor m_formattedFgColour;
+    QColor m_formattedBgColour;
     QColor m_nullFgColour;
     QColor m_nullBgColour;
     QColor m_binFgColour;
     QColor m_binBgColour;
     QFont m_font;
     int m_symbolLimit;
+    int m_rowsLimit;
     bool m_imagePreviewEnabled;
 
     /**

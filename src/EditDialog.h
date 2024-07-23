@@ -6,6 +6,7 @@
 
 class QHexEdit;
 class DockTextEdit;
+class ImageViewer;
 
 namespace Ui {
 class EditDialog;
@@ -20,7 +21,10 @@ public:
     ~EditDialog() override;
 
     void setCurrentIndex(const QModelIndex& idx);
-    QPersistentModelIndex currentIndex() { return m_currentIndex; };
+    bool isModified() const;
+    void setModified(bool modified);
+    QPersistentModelIndex currentIndex() const { return m_currentIndex; }
+    void promptSaveData();
 
 public slots:
     void setFocus();
@@ -45,18 +49,19 @@ private slots:
     void updateCellInfoAndMode(const QByteArray& bArrdata);
     void setMustIndentAndCompact(bool enable);
     void openPrintDialog();
-    void openPrintImageDialog();
     void copyHexAscii();
     void setWordWrapping(bool value);
 
 signals:
     void recordTextUpdated(const QPersistentModelIndex& idx, const QByteArray& bArrdata, bool isBlob);
+    void evaluateText(const QPersistentModelIndex& idx, const std::string& text);
     void requestUrlOrFileOpen(const QString& urlString);
 
 private:
     Ui::EditDialog* ui;
     QHexEdit* hexEdit;
     DockTextEdit* sciEdit;
+    ImageViewer* imageEdit;
     QPersistentModelIndex m_currentIndex;
     int dataSource;
     int dataType;
@@ -83,17 +88,18 @@ private:
     };
 
     // Edit modes and editor stack (this must be aligned with the UI).
-    // Note that text modes (plain, JSON and XML) share the Scintilla widget,
+    // Note that text modes (plain, JSON, XML and SQL evaluator) share the Scintilla widget,
     // Consequently the editor stack range is TextEditor..ImageViewer.
     enum EditModes {
         // Modes with their own widget in the stack:
         TextEditor = 0,
         RtlTextEditor = 1,
         HexEditor = 2,
-        ImageViewer = 3,
+        ImageEditor = 3,
         // Modes in the Scintilla editor:
         JsonEditor = 4,
-        XmlEditor = 5
+        XmlEditor = 5,
+        SqlEvaluator = 6
     };
 
     int checkDataType(const QByteArray& bArrdata) const;

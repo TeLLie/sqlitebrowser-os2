@@ -57,6 +57,7 @@ ExtendedScintilla::ExtendedScintilla(QWidget* parent) :
 
     // Connect signals
     connect(this, &ExtendedScintilla::linesChanged, this, &ExtendedScintilla::updateLineNumberAreaWidth);
+    connect(this, &QsciScintillaBase::SCN_ZOOM, this, &ExtendedScintilla::updateLineNumberAreaWidth);
 
     // The shortcuts are constrained to the Widget context so they do not conflict with other SqlTextEdit widgets in the Main Window.
     QShortcut* shortcutFindReplace = new QShortcut(QKeySequence(tr("Ctrl+H")), this, nullptr, nullptr, Qt::WidgetShortcut);
@@ -89,7 +90,7 @@ void ExtendedScintilla::updateLineNumberAreaWidth()
 
     // Calculate the width of this number if it was all zeros (this is because a 1 might require less space than a 0 and this could
     // cause some flickering depending on the font) and set the new margin width.
-    setMarginWidth(0, QFontMetrics(font()).width(QString("0").repeated(digits)) + 5);
+    setMarginWidth(0, QString("0").repeated(digits+1));
 }
 
 void ExtendedScintilla::dropEvent(QDropEvent* e)
@@ -138,12 +139,25 @@ void ExtendedScintilla::reloadCommonSettings()
         setMarginsForegroundColor(QPalette().color(QPalette::Active, QPalette::WindowText));
         break;
     case Settings::DarkStyle :
-        setMarginsBackgroundColor(QColor("#32414B"));
-        setMarginsForegroundColor(QColor("#EFF0F1"));
+        setMarginsBackgroundColor(QColor(0x32, 0x41, 0x4B));
+        setMarginsForegroundColor(QColor(0xEF, 0xF0, 0xF1));
+        break;
+    case Settings::LightStyle :
+        setMarginsBackgroundColor(QColor(0xC9, 0xCD, 0xD0));
+        setMarginsForegroundColor(QColor(0x00, 0x00, 0x00));
         break;
     }
+    // Reuse color of current line background in fold margin.
+    QColor currentLineColor (Settings::getValue("syntaxhighlighter", "currentline_colour").toString());
+    setFoldMarginColors(currentLineColor, currentLineColor);
+
     setPaper(Settings::getValue("syntaxhighlighter", "background_colour").toString());
     setColor(Settings::getValue("syntaxhighlighter", "foreground_colour").toString());
+    setMatchedBraceBackgroundColor(Settings::getValue("syntaxhighlighter", "highlight_colour").toString());
+
+    setSelectionBackgroundColor(Settings::getValue("syntaxhighlighter", "selected_bg_colour").toString());
+
+    setSelectionForegroundColor(Settings::getValue("syntaxhighlighter", "selected_fg_colour").toString());
 }
 
 void ExtendedScintilla::reloadKeywords()
@@ -192,8 +206,10 @@ void ExtendedScintilla::reloadLexerSettings(QsciLexer *lexer)
     setCaretLineBackgroundColor(QColor(Settings::getValue("syntaxhighlighter", "currentline_colour").toString()));
     setCaretForegroundColor(foreground);
 
-    // Set tab width
+    // Set tab settings
     setTabWidth(Settings::getValue("editor", "tabsize").toInt());
+    setIndentationsUseTabs(Settings::getValue("editor", "indentation_use_tabs").toBool());
+
     if(lexer)
         lexer->refreshProperties();
 
@@ -299,7 +315,7 @@ void ExtendedScintilla::openPrintDialog()
     QsciPrinter printer;
     QPrintPreviewDialog *dialog = new QPrintPreviewDialog(&printer);
 
-    connect(dialog, &QPrintPreviewDialog::paintRequested, [&](QPrinter *previewPrinter) {
+    connect(dialog, &QPrintPreviewDialog::paintRequested, this, [&](QPrinter *previewPrinter) {
         QsciPrinter* sciPrinter = static_cast<QsciPrinter*>(previewPrinter);
         sciPrinter->printRange(this);
     });

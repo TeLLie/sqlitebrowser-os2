@@ -11,6 +11,8 @@
 #include <QLineEdit>
 #include <QMenu>
 
+namespace {
+
 class NullLineEdit: public QLineEdit {
     Q_OBJECT
 private:
@@ -33,23 +35,24 @@ public:
         m_isNull = value;
     }
 protected:
-    void contextMenuEvent(QContextMenuEvent *event)
-        {
-            QMenu* editContextMenu = createStandardContextMenu();
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        QMenu* editContextMenu = createStandardContextMenu();
 
-            QAction* nullAction = new QAction(QIcon(":/icons/set_to_null"), tr("Set to NULL"), editContextMenu);
-            connect(nullAction, &QAction::triggered, [&]() {
-                    setNull(true);
-                });
-            nullAction->setShortcut(QKeySequence(tr("Alt+Del")));
-            editContextMenu->addSeparator();
-            editContextMenu->addAction(nullAction);
+        QAction* nullAction = new QAction(QIcon(":/icons/set_to_null"), tr("Set to NULL"), editContextMenu);
+        connect(nullAction, &QAction::triggered, nullAction, [&]() {
+            setNull(true);
+        });
+        nullAction->setShortcut(QKeySequence(tr("Alt+Del")));
+        editContextMenu->addSeparator();
+        editContextMenu->addAction(nullAction);
 
-            editContextMenu->exec(event->globalPos());
-            delete editContextMenu;
-        }
+        editContextMenu->exec(event->globalPos());
+        delete editContextMenu;
+    }
 
-    void keyPressEvent(QKeyEvent *evt) {
+    void keyPressEvent(QKeyEvent *evt) override
+    {
         // Alt+Del sets field to NULL
         if((evt->modifiers() & Qt::AltModifier) && (evt->key() == Qt::Key_Delete))
             setNull(true);
@@ -111,6 +114,9 @@ public:
         }
     }
 };
+
+}
+
 
 AddRecordDialog::AddRecordDialog(DBBrowserDB& db, const sqlb::ObjectIdentifier& tableName, QWidget* parent, const std::vector<std::string>& _pseudo_pk)
     : QDialog(parent),
@@ -178,30 +184,29 @@ void AddRecordDialog::populateFields()
     ui->treeWidget->setItemDelegateForColumn(kValue, new EditDelegate(this));
 
     sqlb::FieldVector fields;
-    std::vector<sqlb::ConstraintPtr> fks;
-    sqlb::StringVector pk;
+    std::vector<std::shared_ptr<sqlb::ForeignKeyClause>> fks;
+    sqlb::IndexedColumnVector pk;
     bool auto_increment = false;
 
     // Initialize fields, fks and pk differently depending on whether it's a table or a view.
-    const sqlb::ObjectPtr obj = pdb.getObjectByName(curTable);
-    if (obj->type() == sqlb::Object::Table)
+    const sqlb::TablePtr table = pdb.getTableByName(curTable);
+    fields = table->fields;
+    if (!table->isView())
     {
-        sqlb::TablePtr m_table = pdb.getObjectByName<sqlb::Table>(curTable);
-        fields = m_table->fields;
-        for(const sqlb::Field& f : fields)
-            fks.push_back(m_table->constraint({f.name()}, sqlb::Constraint::ForeignKeyConstraintType));
+        std::transform(fields.begin(), fields.end(), std::back_inserter(fks), [table](const auto& f) {
+            return table->foreignKey({f.name()});
+        });
 
-        const auto pk_constraint = m_table->primaryKey();
+        const auto pk_constraint = table->primaryKey();
         if(pk_constraint)
         {
-            pk = pk_constraint->columnList();
+            pk = table->primaryKeyColumns();
             auto_increment = pk_constraint->autoIncrement();
         }
     } else {
-        sqlb::ViewPtr m_view = pdb.getObjectByName<sqlb::View>(curTable);
-        fields = m_view->fields;
-        fks.resize(fields.size(), sqlb::ConstraintPtr(nullptr));
-        pk = pseudo_pk;
+        // It's a view
+        fks.resize(fields.size(), nullptr);
+        std::transform(pseudo_pk.begin(), pseudo_pk.end(), std::back_inserter(pk), [](const auto& e) { return sqlb::IndexedColumn(e, false); });
     }
 
     for(uint i = 0; i < fields.size(); i++)
@@ -239,7 +244,7 @@ void AddRecordDialog::populateFields()
         if (!f.check().empty())
             toolTip.append(tr("Check constraint:\t %1\n").arg(QString::fromStdString(f.check())));
 
-        auto fk = std::dynamic_pointer_cast<sqlb::ForeignKeyClause>(fks[i]);
+        auto fk = fks[i];
         if(fk)
             toolTip.append(tr("Foreign key:\t %1\n").arg(QString::fromStdString(fk->toString())));
 
@@ -346,7 +351,7 @@ void AddRecordDialog::help()
     QWhatsThis::enterWhatsThisMode();
 }
 
-void AddRecordDialog::on_buttonBox_clicked(QAbstractButton* button)
+void AddRecordDialog::buttonBoxClicked(QAbstractButton* button)
 {
     if (button == ui->buttonBox->button(QDialogButtonBox::Cancel))
         reject();

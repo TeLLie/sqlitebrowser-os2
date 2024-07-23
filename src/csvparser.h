@@ -53,20 +53,21 @@ class CSVParser
 public:
     using csvRowFunction = std::function<bool(size_t, CSVRow)>;
 
-    CSVParser(bool trimfields = true, char32_t fieldseparator = ',', char32_t quotechar = '"');
+    explicit CSVParser(bool trimfields = true, char32_t fieldseparator = ',', char32_t quotechar = '"');
     ~CSVParser();
 
     enum ParserResult
     {
         ParserResultSuccess,
         ParserResultCancelled,
-        ParserResultError
+        ParserResultError,
+        ParserResultUnexpectedEOF
     };
 
     /*!
      * \brief parse the given stream
      * @param insertFunction A function pointer that is called for each parsed row. It is passed two parameters, the row number and a list of all parsed columns
-     *                       in the row. The called function may return false if an error ocurred to stop the import process. Otherwise it should return true.
+     *                       in the row. The called function may return false if an error occurred to stop the import process. Otherwise it should return true.
      * \param stream Stream with the CSV parser
      * \param nMaxRecords Max records too read, 0 if unlimited
      * \return ParserResult value that indicated whether action finished normally, was cancelled or errored.

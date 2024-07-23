@@ -5,8 +5,9 @@
 #include "sqlite.h"
 #include "FileDialog.h"
 #include "IconCache.h"
+#include "Data.h"
 
-#include <QFile>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QMessageBox>
 #include <QTextCodec>
@@ -46,18 +47,10 @@ ExportDataDialog::ExportDataDialog(DBBrowserDB& db, ExportFormats format, QWidge
         // Get list of tables to export
         for(const auto& it : pdb.schemata)
         {
-            const auto tables = it.second.equal_range("table");
-            const auto views = it.second.equal_range("view");
-            std::map<std::string, sqlb::ObjectPtr> objects;
-            for(auto jt=tables.first;jt!=tables.second;++jt)
-                objects.insert({jt->second->name(), jt->second});
-            for(auto jt=views.first;jt!=views.second;++jt)
-                objects.insert({jt->second->name(), jt->second});
-
-            for(const auto& jt : objects)
+            for(const auto& jt : it.second.tables)
             {
-                sqlb::ObjectIdentifier obj(it.first, jt.second->name());
-                QListWidgetItem* item = new QListWidgetItem(IconCache::get(sqlb::Object::typeToString(jt.second->type())), QString::fromStdString(obj.toDisplayString()));
+                sqlb::ObjectIdentifier obj(it.first, jt.first);
+                QListWidgetItem* item = new QListWidgetItem(IconCache::get(jt.second->isView() ? "view" : "table"), QString::fromStdString(obj.toDisplayString()));
                 item->setData(Qt::UserRole, QString::fromStdString(obj.toSerialised()));
                 ui->listTables->addItem(item);
             }
@@ -114,9 +107,9 @@ bool ExportDataDialog::exportQueryCsv(const std::string& sQuery, const QString& 
 
     // Chars that require escaping
     std::string special_chars = newlineStr.toStdString() + sepChar.toLatin1() + quoteChar.toLatin1();
-
+    bool writeError = false;
     // Open file
-    QFile file(sFilename);
+    QSaveFile file(sFilename);
     if(file.open(QIODevice::WriteOnly))
     {
         // Open text stream to the file
@@ -151,17 +144,20 @@ bool ExportDataDialog::exportQueryCsv(const std::string& sQuery, const QString& 
             QApplication::setOverrideCursor(Qt::WaitCursor);
             int columns = sqlite3_column_count(stmt);
             size_t counter = 0;
-            while(sqlite3_step(stmt) == SQLITE_ROW)
+            while(!writeError && sqlite3_step(stmt) == SQLITE_ROW)
             {
                 for (int i = 0; i < columns; ++i)
                 {
-                    QString content = QString::fromUtf8(
-                                reinterpret_cast<const char*>(sqlite3_column_blob(stmt, i)),
-                                sqlite3_column_bytes(stmt, i));
+                    QByteArray blob (reinterpret_cast<const char*>(sqlite3_column_blob(stmt, i)),
+                                     sqlite3_column_bytes(stmt, i));
+                    QString content = QString::fromUtf8(blob);
 
+                    // Convert to base64 if the data is binary. This case doesn't need quotes.
+                    if(!isTextOnly(blob))
+                        stream << blob.toBase64();
                     // If no quote char is set but the content contains a line break, we enforce some quote characters. This probably isn't entirely correct
                     // but still better than having the line breaks unquoted and effectively outputting a garbage file.
-                    if(quoteChar.isNull() && content.contains(newlineStr))
+                    else if(quoteChar.isNull() && content.contains(newlineStr))
                         stream << '"' << content.replace('"', "\"\"") << '"';
                     // If the content needs to be quoted, quote it. But only if a quote char has been specified
                     else if(!quoteChar.isNull() && content.toStdString().find_first_of(special_chars) != std::string::npos)
@@ -181,6 +177,7 @@ bool ExportDataDialog::exportQueryCsv(const std::string& sQuery, const QString& 
                 if(counter % 1000 == 0)
                     qApp->processEvents();
                 counter++;
+                writeError = stream.status() != QTextStream::Ok;
             }
         }
         sqlite3_finalize(stmt);
@@ -189,7 +186,17 @@ bool ExportDataDialog::exportQueryCsv(const std::string& sQuery, const QString& 
         qApp->processEvents();
 
         // Done writing the file
-        file.close();
+        if(!file.commit()) {
+            writeError = true;
+        }
+
+        if(writeError || file.error() != QFileDevice::NoError) {
+            QMessageBox::warning(this, QApplication::applicationName(),
+                                 tr("Error while writing the file '%1': %2")
+                                 .arg(sFilename, file.errorString()));
+            return false;
+        }
+
     } else {
         QMessageBox::warning(this, QApplication::applicationName(),
                              tr("Could not open output file: %1").arg(sFilename));
@@ -202,7 +209,7 @@ bool ExportDataDialog::exportQueryCsv(const std::string& sQuery, const QString& 
 bool ExportDataDialog::exportQueryJson(const std::string& sQuery, const QString& sFilename)
 {
     // Open file
-    QFile file(sFilename);
+    QSaveFile file(sFilename);
     if(file.open(QIODevice::WriteOnly))
     {
         auto pDb = pdb.get(tr("exporting JSON"));
@@ -278,12 +285,23 @@ bool ExportDataDialog::exportQueryJson(const std::string& sQuery, const QString&
 
         // Create JSON document
         file.write(json_table.dump(ui->checkPrettyPrint->isChecked() ? 4 : -1).c_str());
+        bool writeError = file.error() != QFileDevice::NoError;
 
         QApplication::restoreOverrideCursor();
         qApp->processEvents();
 
         // Done writing the file
-        file.close();
+        if(!file.commit()) {
+            writeError = true;
+        }
+
+        if(writeError || file.error() != QFileDevice::NoError) {
+          QMessageBox::warning(this, QApplication::applicationName(),
+                               tr("Error while writing the file '%1': %2")
+                               .arg(sFilename, file.errorString()));
+          return false;
+        }
+
     } else {
         QMessageBox::warning(this, QApplication::applicationName(),
                              tr("Could not open output file: %1").arg(sFilename));
@@ -315,6 +333,8 @@ void ExportDataDialog::accept()
         break;
     }
 
+    bool success = true;
+    
     if(!m_sQuery.empty())
     {
         // called from sqlexecute query tab
@@ -329,10 +349,10 @@ void ExportDataDialog::accept()
             return;
         }
 
-        exportQuery(m_sQuery, sFilename);
+        success = exportQuery(m_sQuery, sFilename);
     } else {
         // called from the File export menu
-        QList<QListWidgetItem*> selectedItems = ui->listTables->selectedItems();
+        const QList<QListWidgetItem*> selectedItems = ui->listTables->selectedItems();
 
         if(selectedItems.isEmpty())
         {
@@ -382,7 +402,7 @@ void ExportDataDialog::accept()
             // if we are called from execute sql tab, query is already set
             // and we only export 1 select
             std::string sQuery = "SELECT * FROM " + sqlb::ObjectIdentifier(selectedItems.at(i)->data(Qt::UserRole).toString().toStdString()).toString() + ";";
-            exportQuery(sQuery, filenames.at(i));
+            success = exportQuery(sQuery, filenames.at(i)) && success;
         }
     }
 
@@ -394,7 +414,11 @@ void ExportDataDialog::accept()
     Settings::setValue("exportcsv", "newlinecharacters", currentNewLineString());
 
     // Notify the user the export has completed
-    QMessageBox::information(this, QApplication::applicationName(), tr("Export completed."));
+    if(success) {
+        QMessageBox::information(this, QApplication::applicationName(), tr("Export completed."));
+    } else {
+        QMessageBox::warning(this, QApplication::applicationName(), tr("Export finished with errors."));
+    }
     QDialog::accept();
 }
 
