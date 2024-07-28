@@ -17,6 +17,21 @@
    <string>This area displays information about the data present in this database cell</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_5">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>2</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>2</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
@@ -76,6 +91,11 @@
          <string>XML</string>
         </property>
        </item>
+       <item>
+        <property name="text">
+         <string>Evaluation</string>
+        </property>
+       </item>
       </widget>
      </item>
      <item>
@@ -95,7 +115,7 @@
        <property name="icon">
         <iconset resource="icons/icons.qrc">
          <normaloff>:/icons/keyword</normaloff>
-         <normalon>:/icons/cog_go.png</normalon>:/icons/keyword</iconset>
+         <normalon>:/icons/cog_go</normalon>:/icons/keyword</iconset>
        </property>
        <property name="checkable">
         <bool>true</bool>
@@ -120,6 +140,15 @@
      </item>
      <item>
       <widget class="QToolBar" name="editCellToolbar">
+       <property name="movable">
+        <bool>false</bool>
+       </property>
+       <property name="iconSize">
+        <size>
+         <width>16</width>
+         <height>16</height>
+        </size>
+       </property>
        <addaction name="actionWordWrap"/>
        <addaction name="actionIndent"/>
        <addaction name="actionImport"/>
@@ -137,63 +166,18 @@
      <property name="currentIndex">
       <number>0</number>
      </property>
-     <widget class="QWidget" name="editorSci">
+     <widget class="QTextEdit" name="qtEdit">
+      <property name="font">
+       <font>
+        <family>Monospace</family>
+       </font>
+      </property>
       <property name="whatsThis">
-       <string>The text editor modes let you edit plain text, as well as JSON or XML data with syntax highlighting, automatic formatting and validation before saving.
-
-Errors are indicated with a red squiggle underline.</string>
+       <string>This Qt editor is used for right-to-left scripts, which are not supported by the default Text editor. The presence of right-to-left characters is detected and this editor mode is automatically selected.</string>
       </property>
-     </widget>
-     <widget class="QWidget" name="rtlVerticalLayout">
-      <layout class="QVBoxLayout" name="verticalLayout_3">
-       <item>
-        <widget class="QTextEdit" name="qtEdit">
-         <property name="font">
-          <font>
-           <family>Monospace</family>
-          </font>
-         </property>
-         <property name="whatsThis">
-          <string>This Qt editor is used for right-to-left scripts, which are not supported by the default Text editor. The presence of right-to-left characters is detected and this editor mode is automatically selected.</string>
-         </property>
-         <property name="acceptRichText">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="editorBinary">
-      <property name="contextMenuPolicy">
-       <enum>Qt::ActionsContextMenu</enum>
+      <property name="acceptRichText">
+       <bool>false</bool>
       </property>
-     </widget>
-     <widget class="QScrollArea" name="editorImageScrollArea">
-      <property name="widgetResizable">
-       <bool>true</bool>
-      </property>
-      <widget class="QWidget" name="scrollAreaWidgetContents">
-       <property name="geometry">
-        <rect>
-         <x>0</x>
-         <y>0</y>
-         <width>84</width>
-         <height>35</height>
-        </rect>
-       </property>
-       <layout class="QVBoxLayout" name="verticalLayout_2">
-        <item>
-         <widget class="QLabel" name="editorImage">
-          <property name="contextMenuPolicy">
-           <enum>Qt::ActionsContextMenu</enum>
-          </property>
-          <property name="text">
-           <string/>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
      </widget>
     </widget>
    </item>
@@ -202,7 +186,7 @@ Errors are indicated with a red squiggle underline.</string>
      <item>
       <layout class="QVBoxLayout" name="verticalLayout">
        <item>
-        <widget class="QLabel" name="labelType">
+        <widget class="QLabel" name="labelCell">
          <property name="sizePolicy">
           <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -216,7 +200,7 @@ Errors are indicated with a red squiggle underline.</string>
           </size>
          </property>
          <property name="text">
-          <string>Type of data currently in cell</string>
+          <string>Identification of the cell currently in the editor</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -224,7 +208,7 @@ Errors are indicated with a red squiggle underline.</string>
         </widget>
        </item>
        <item>
-        <widget class="QLabel" name="labelSize">
+        <widget class="QLabel" name="labelInfo">
          <property name="sizePolicy">
           <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -238,7 +222,7 @@ Errors are indicated with a red squiggle underline.</string>
           </size>
          </property>
          <property name="text">
-          <string>Size of data currently in table</string>
+          <string>Type and size of data currently in table</string>
          </property>
          <property name="textFormat">
           <enum>Qt::PlainText</enum>
@@ -275,21 +259,6 @@ Errors are indicated with a red squiggle underline.</string>
     </layout>
    </item>
   </layout>
-  <action name="actionPrintImage">
-   <property name="icon">
-    <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/print</normaloff>:/icons/print</iconset>
-   </property>
-   <property name="text">
-    <string>Print...</string>
-   </property>
-   <property name="toolTip">
-    <string>Open preview dialog for printing displayed image</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+P</string>
-   </property>
-  </action>
   <action name="actionPrint">
    <property name="icon">
     <iconset resource="icons/icons.qrc">
@@ -544,22 +513,6 @@ Errors are indicated with a red squiggle underline.</string>
     <hint type="sourcelabel">
      <x>162</x>
      <y>33</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>308</x>
-     <y>190</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>actionPrintImage</sender>
-   <signal>triggered()</signal>
-   <receiver>EditDialog</receiver>
-   <slot>openPrintImageDialog()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>-1</x>
-     <y>-1</y>
     </hint>
     <hint type="destinationlabel">
      <x>308</x>

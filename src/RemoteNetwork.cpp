@@ -1,6 +1,5 @@
 #include <QApplication>
 #include <QtNetwork/QNetworkAccessManager>
-#include <QtNetwork/QNetworkConfigurationManager>
 #include <QMessageBox>
 #include <QtNetwork/QNetworkReply>
 #include <QFile>
@@ -27,23 +26,15 @@ using json = nlohmann::json;
 
 RemoteNetwork::RemoteNetwork() :
     m_manager(new QNetworkAccessManager),
-    m_configurationManager(new QNetworkConfigurationManager),
-    m_progress(nullptr)
+    m_progress(nullptr),
+    m_sslConfiguration(QSslConfiguration::defaultConfiguration())
 {
-    // Update network configurations
-    connect(m_configurationManager, &QNetworkConfigurationManager::updateCompleted, [this]() {
-        m_manager->setConfiguration(m_configurationManager->defaultConfiguration());
-
-        emit networkReady();
-    });
-
     // Set up SSL configuration
-    m_sslConfiguration = QSslConfiguration::defaultConfiguration();
     m_sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyPeer);
 
     // Load CA certs from resource file
     QDir dirCaCerts(":/certs");
-    QStringList caCertsList = dirCaCerts.entryList();
+    const QStringList caCertsList = dirCaCerts.entryList();
     QList<QSslCertificate> caCerts;
     for(const QString& caCertName : caCertsList)
         caCerts += QSslCertificate::fromPath(":/certs/" + caCertName);
@@ -67,7 +58,7 @@ void RemoteNetwork::reloadSettings()
 {
     // Load all configured client certificates
     m_clientCertFiles.clear();
-    auto client_certs = Settings::getValue("remote", "client_certificates").toStringList();
+    const auto client_certs = Settings::getValue("remote", "client_certificates").toStringList();
     for(const QString& path : client_certs)
     {
         QFile file(path);
@@ -228,6 +219,8 @@ void RemoteNetwork::gotReply(QNetworkReply* reply)
             file.close();
         }
         break;
+    case RequestTypeCustom:
+        break;
     }
 
     // Delete reply later, i.e. after returning from this slot function
@@ -313,7 +306,7 @@ QString RemoteNetwork::getInfoFromClientCert(const QString& cert, CertInfo info)
         // Assemble the full URL from the host name. We use port 443 by default but for
         // local development purposes we use 5550 instead.
         QString host = cn_parts.last();
-        host = QString("https://%1%2/").arg(host).arg(host.contains("docker-dev") ? ":5550" : "");
+        host = QString("https://%1%2/").arg(host, host.contains("docker-dev") ? ":5550" : "");
         return host;
     }
 
@@ -361,6 +354,9 @@ void RemoteNetwork::prepareProgressDialog(QNetworkReply* reply, bool upload, con
     if(!m_progress)
         m_progress = new QProgressDialog();
     m_progress->reset();
+    // Disable context help button on Windows
+    m_progress->setWindowFlags(m_progress->windowFlags()
+                            & ~Qt::WindowContextHelpButtonHint);
     m_progress->setWindowModality(Qt::NonModal);
     m_progress->setCancelButtonText(tr("Cancel"));
 
@@ -384,13 +380,6 @@ void RemoteNetwork::prepareProgressDialog(QNetworkReply* reply, bool upload, con
 void RemoteNetwork::fetch(const QUrl& url, RequestType type, const QString& clientCert,
                           std::function<void(QByteArray)> when_finished, bool synchronous, bool ignore_errors)
 {
-    // Check if network is accessible. If not, abort right here
-    if(m_manager->networkAccessible() == QNetworkAccessManager::NotAccessible)
-    {
-        QMessageBox::warning(nullptr, qApp->applicationName(), tr("Error: The network is not accessible."));
-        return;
-    }
-
     // Build network request
     QNetworkRequest request;
     request.setUrl(url);
@@ -450,13 +439,6 @@ void RemoteNetwork::push(const QString& filename, const QUrl& url, const QString
                          const QString& commitMessage, const QString& licence, bool isPublic, const QString& branch,
                          bool forcePush, const QString& last_commit)
 {
-    // Check if network is accessible. If not, abort right here
-    if(m_manager->networkAccessible() == QNetworkAccessManager::NotAccessible)
-    {
-        QMessageBox::warning(nullptr, qApp->applicationName(), tr("Error: The network is not accessible."));
-        return;
-    }
-
     // Open the file to send and check if it exists
     QFile* file = new QFile(filename);
     if(!file->open(QFile::ReadOnly))

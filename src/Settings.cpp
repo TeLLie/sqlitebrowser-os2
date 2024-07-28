@@ -1,6 +1,7 @@
 #include "Settings.h"
 
 #include <QApplication>
+#include <QDebug>
 #include <QDir>
 #include <QSettings>
 #include <QColor>
@@ -9,12 +10,80 @@
 #include <QStandardPaths>
 #include <QPalette>
 
+QString Settings::userSettingsFile;
+QSettings* Settings::settings;
 std::unordered_map<std::string, QVariant> Settings::m_hCache;
 int Settings::m_defaultFontSize;
 
 static bool ends_with(const std::string& str, const std::string& with)
 {
     return str.rfind(with) == str.size() - with.size();
+}
+
+void Settings::setUserSettingsFile(const QString& userSettingsFileArg)
+{
+    userSettingsFile = userSettingsFileArg;
+}
+
+bool Settings::isVaildSettingsFile(const QString& userSettingsFile)
+{
+    /*
+    Variable that stores whether or not the settings file requested by the user is a normal settings file
+    If the file does not exist and is newly created, the if statement below is not executed, so the default value is set to true
+    */
+
+    bool isNormalUserSettingsFile = true;
+
+    // Code that verifies that the settings file requested by the user is a normal settings file
+    if(userSettingsFile != nullptr)
+    {
+        QFile *file = new QFile;
+        file->setFileName(userSettingsFile);
+
+        if(file->open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            if(file->exists() &&
+              QString::compare(QString("[%General]\n"), file->readLine(), Qt::CaseInsensitive) != 0)
+                isNormalUserSettingsFile = false;
+        }
+
+        file->close();
+    }
+
+    return isNormalUserSettingsFile;
+}
+
+void Settings::setSettingsObject()
+{
+    // If an object has already been created, it is terminated to reduce overhead
+    if(settings)
+        return;
+
+    const bool isNormalUserSettingsFile = isVaildSettingsFile(userSettingsFile);
+
+    if(userSettingsFile == nullptr)
+    {
+        settings = new QSettings(QCoreApplication::organizationName(), QCoreApplication::organizationName());
+    } else {
+        if(isNormalUserSettingsFile)
+        {
+            settings = new QSettings(userSettingsFile, QSettings::IniFormat);
+
+            // Code to verify that the user does not have access to the requested settings file
+            if(settings->status() == QSettings::AccessError) {
+                qWarning() << qPrintable("The given settings file can NOT access. Please check the permission for the file.");
+                qWarning() << qPrintable("So, the -S/--settings option is ignored.");
+
+                // Since you do not have permission to the file, delete the existing assignment and assign the standard
+                delete settings;
+                settings = new QSettings(QCoreApplication::organizationName(), QCoreApplication::organizationName());
+            }
+        } else {
+            qWarning() << qPrintable("The given settings file is not a normal settings file. Please check again.");
+            qWarning() << qPrintable("So, the -S/--settings option is ignored.");
+            settings = new QSettings(QCoreApplication::organizationName(), QCoreApplication::organizationName());
+        }
+    }
 }
 
 QVariant Settings::getValue(const std::string& group, const std::string& name)
@@ -26,8 +95,8 @@ QVariant Settings::getValue(const std::string& group, const std::string& name)
         return cacheIndex->second;
     } else {
         // Nothing found in the cache, so get the value from the settings file or get the default value if there is no value set yet
-        QSettings settings(QApplication::organizationName(), QApplication::organizationName());
-        QVariant value = settings.value(QString::fromStdString(group + "/" + name), getDefaultValue(group, name));
+        setSettingsObject();
+        QVariant value = settings->value(QString::fromStdString(group + "/" + name), getDefaultValue(group, name));
 
         // Store this value in the cache for further usage and return it afterwards
         m_hCache.insert({group + name, value});
@@ -35,17 +104,17 @@ QVariant Settings::getValue(const std::string& group, const std::string& name)
     }
 }
 
-void Settings::setValue(const std::string& group, const std::string& name, const QVariant& value, bool dont_save_to_disk)
+void Settings::setValue(const std::string& group, const std::string& name, const QVariant& value, bool save_to_disk)
 {
     // Sometime the value has to be saved for the current session only but get discarded when the application exits.
     // In order to achieve this this flag can be set which disables the save to disk mechanism and only leaves the save to cache part active.
-    if(dont_save_to_disk == false)
+    if(save_to_disk)
     {
+        setSettingsObject();
         // Set the group and save the given value
-        QSettings settings(QApplication::organizationName(), QApplication::organizationName());
-        settings.beginGroup(QString::fromStdString(group));
-        settings.setValue(QString::fromStdString(name), value);
-        settings.endGroup();
+        settings->beginGroup(QString::fromStdString(group));
+        settings->setValue(QString::fromStdString(name), value);
+        settings->endGroup();
     }
 
     // Also change it in the cache
@@ -117,12 +186,14 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
             return '"';
         if(name == "encoding")
             return "UTF-8";
+        if(name == "localconventions")
+            return false;
     }
 
     // exportsql group?
     if(group == "exportsql")
     {
-        if(name == "insertcolnames" || name == "insertmultiple")
+        if(name == "insertcolnames" || name == "insertmultiple" || name == "keeporiginal")
             return false;
         if(name == "oldschema")
             return 0;
@@ -160,6 +231,10 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
     if(group == "General" && name == "recentFileList")
         return QStringList();
 
+    // General/maxRecentFiles?
+    if(group == "General" && name == "maxRecentFiles")
+        return 5;
+
     // General/language?
     if(group == "General" && name == "language")
         return QLocale::system().name();
@@ -195,6 +270,10 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
     if(group == "General" && name == "fontsize")
         return m_defaultFontSize;
 
+    // General/promptsqltabsinnewproject
+    if(group == "General" && name == "promptsqltabsinnewproject")
+        return true;
+
     // checkversion group?
     if(group == "checkversion")
     {
@@ -209,12 +288,17 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
     // Data Browser/NULL Fields
     if(group == "databrowser")
     {
-        if(name == "font")
-            return QFont().defaultFamily();
+        if(name == "font") {
+            QFont font("Monospace");
+            font.setStyleHint(QFont::TypeWriter);
+            return QFontInfo(font).family();
+        }
         if(name == "fontsize")
             return 10;
         if(name == "symbol_limit")
             return 5000;
+        if (name == "rows_limit")
+            return 10'000'000;
         if(name == "complete_threshold")
             return 1000;
         if(name == "image_preview")
@@ -268,7 +352,7 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
     // editor/fontsize or log/fontsize?
     if((group == "editor" || group == "log") && name == "fontsize")
 #ifdef Q_OS_MAC
-       // Use 12 pt size as the default on OSX
+       // Use 12 pt size as the default on macOS
         return 12;
 #else
         return 9;
@@ -277,9 +361,9 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
     if(group == "editor")
     {
         if(name == "tabsize")
-        {
             return 4;
-        }
+        if(name == "indentation_use_tabs")
+            return true;
     }
 
     // editor/wrap_lines
@@ -346,6 +430,9 @@ QVariant Settings::getDefaultValue(const std::string& group, const std::string& 
     // SchemaDock Drag & drop settings
     if(group == "SchemaDock")
     {
+        if(name == "dropSelectQuery")
+            return true;
+
         if(name == "dropQualifiedNames")
             return false;
 
@@ -386,6 +473,8 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
     // Data Browser/NULL & Binary Fields
     if(group == "databrowser")
     {
+        // The switch on style can be removed if the following issue is fixed:
+        // https://github.com/ColinDuquesnoy/QDarkStyleSheet/issues/171
         switch (style) {
         case FollowDesktopStyle :
             if(name == "null_fg_colour")
@@ -396,6 +485,10 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
                 return QPalette().color(QPalette::Active, QPalette::Text).name();
             if(name == "reg_bg_colour")
                 return QPalette().color(QPalette::Active, QPalette::Base).name();
+            if(name == "formatted_fg_colour")
+                return QPalette().color(QPalette::Active, QPalette::Text).name();
+            if(name == "formatted_bg_colour")
+                return QPalette().color(QPalette::Active, QPalette::AlternateBase).name();
             if(name == "bin_fg_colour")
                 return QColor(Qt::lightGray).name();
             if(name == "bin_bg_colour")
@@ -403,17 +496,35 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
             break;
         case DarkStyle :
             if(name == "null_fg_colour")
-                return QColor("#787878");
+                return QColor(0x78, 0x78, 0x78);
             if(name == "null_bg_colour")
-                return QColor("#19232D");
+                return QColor(0x19, 0x23, 0x2D);
             if(name == "reg_fg_colour")
-                return QColor("#F0F0F0");
+                return QColor(0xF0, 0xF0, 0xF0);
             if(name == "reg_bg_colour")
-                return QColor("#19232D");
+                return QColor(0x19, 0x23, 0x2D);
+            if(name == "formatted_fg_colour")
+                return QColor(0xF0, 0xF0, 0xF0);
+            if(name == "formatted_bg_colour")
+                return QColor(0x19, 0x23, 0x2D);
             if(name == "bin_fg_colour")
-                return QColor("#787878");
+                return QColor(0x78, 0x78, 0x78);
             if(name == "bin_bg_colour")
-                return QColor("#19232D");
+                return QColor(0x19, 0x23, 0x2D);
+            break;
+        case LightStyle :
+            if(name == "null_fg_colour" || name == "bin_fg_colour")
+                return QColor(0xA5, 0xA9, 0xAC);
+            if(name == "null_bg_colour" || name == "bin_bg_colour")
+                return QColor(0xFA, 0xFA, 0xFA);
+            if(name == "reg_fg_colour")
+                return QColor(0x00, 0x00, 0x00);
+            if(name == "reg_bg_colour")
+                return QColor(0xFA, 0xFA, 0xFA);
+            if(name == "formatted_fg_colour")
+                return QColor(0x00, 0x00, 0x00);
+            if(name == "formatted_bg_colour")
+                return QColor(0xFA, 0xFA, 0xFA);
             break;
         }
     }
@@ -426,20 +537,29 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
         {
             QColor backgroundColour;
             QColor foregroundColour;
+
             switch (style) {
             case FollowDesktopStyle :
                 backgroundColour = QPalette().color(QPalette::Active, QPalette::Base);
                 foregroundColour = QPalette().color(QPalette::Active, QPalette::Text);
                 break;
             case DarkStyle :
-                foregroundColour = QColor("#F0F0F0");
-                backgroundColour = QColor("#19232D");
+                foregroundColour = QColor(0xF0, 0xF0, 0xF0);
+                backgroundColour = QColor(0x19, 0x23, 0x2D);
+                break;
+            case LightStyle :
+                foregroundColour = QColor(0x00, 0x00, 0x00);
+                backgroundColour = QColor(0xFA, 0xFA, 0xFA);
                 break;
             }
             if(name == "foreground_colour")
                 return foregroundColour;
             else if(name == "background_colour")
                 return backgroundColour;
+            else if(name == "selected_fg_colour")
+                return QPalette().color(QPalette::Active, QPalette::HighlightedText);
+            else if(name == "selected_bg_colour")
+                return QPalette().color(QPalette::Active, QPalette::Highlight);
 
             // Detect and provide sensible defaults for dark themes
             if (backgroundColour.value() < foregroundColour.value()) {
@@ -452,11 +572,13 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
                 else if(name == "comment_colour")
                     return QColor(Qt::green);
                 else if(name == "identifier_colour")
-                    return QColor(Qt::magenta);
+                    return QColor(221, 160, 221);
                 else if(name == "string_colour")
                     return QColor(Qt::lightGray);
                 else if(name == "currentline_colour")
                     return backgroundColour.lighter(150);
+                else if(name == "highlight_colour")
+                    return QColor(79, 148, 205);
             } else {
                 if(name == "keyword_colour")
                     return QColor(Qt::darkBlue);
@@ -472,6 +594,8 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
                     return QColor(Qt::red);
                 else if(name == "currentline_colour")
                     return QColor(236, 236, 245);
+                else if(name == "highlight_colour")
+                    return QColor(Qt::cyan);
             }
         }
     }
@@ -480,9 +604,67 @@ QColor Settings::getDefaultColorValue(const std::string& group, const std::strin
     return QColor();
 }
 
+void Settings::clearValue(const std::string& group, const std::string& name)
+{
+    setSettingsObject();
+    settings->beginGroup(QString::fromStdString(group));
+    settings->remove(QString::fromStdString(name));
+    settings->endGroup();
+    m_hCache.clear();
+}
+
 void Settings::restoreDefaults ()
 {
-    QSettings settings(QApplication::organizationName(), QApplication::organizationName());
-    settings.clear();
+    setSettingsObject();
+    settings->clear();
     m_hCache.clear();
+}
+
+void Settings::exportSettings(const QString& fileName)
+{
+    QSettings exportSettings(fileName, QSettings::IniFormat);
+
+    const QStringList groups = settings->childGroups();
+    for(const QString& currentGroup : groups)
+    {
+        settings->beginGroup(currentGroup);
+        const QStringList keys = settings->childKeys();
+        for(const QString& currentKey : keys)
+        {
+            exportSettings.beginGroup(currentGroup);
+            exportSettings.setValue(currentKey, getValue((currentGroup.toStdString()), (currentKey.toStdString())));
+            exportSettings.endGroup();
+        }
+        settings->endGroup();
+    }
+}
+
+bool Settings::importSettings(const QString& fileName)
+{
+    if(!isVaildSettingsFile(fileName))
+        return false;
+
+    QSettings importSettings(fileName, QSettings::IniFormat);
+
+    const QStringList groups = importSettings.childGroups();
+    for(const QString& currentGroup : groups)
+    {
+        importSettings.beginGroup(currentGroup);
+        const QStringList keys = importSettings.childKeys();
+        for(const QString& currentKey : keys)
+        {
+            settings->beginGroup(currentGroup);
+            settings->setValue(currentKey, importSettings.value(currentKey));
+            settings->endGroup();
+        }
+        importSettings.endGroup();
+    }
+
+    m_hCache.clear();
+    return true;
+}
+
+void Settings::sync()
+{
+    settings->sync();
 }

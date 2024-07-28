@@ -16,7 +16,6 @@ src/sqlitebrowser
 src/Makefile*
 src/debug
 src/release
-src/gen_version.h
 
 # ignore compiled translation files
 src/translations/*.qm
@@ -38,5 +37,3 @@ libs/*/*/*.a
 
 # Ignore .DS_Store files on OSX
 .DS_Store
-.project
-.settings/org.eclipse.core.resources.prefs

@@ -30,7 +30,7 @@ void TestTable::sqlOutput()
     tt.fields.push_back(f);
     tt.fields.emplace_back("car", "text");
     tt.fields.push_back(fkm);
-    tt.addConstraint(ConstraintPtr(new PrimaryKeyConstraint({f.name(), fkm.name()})));
+    tt.addConstraint({f.name(), fkm.name()}, std::make_shared<PrimaryKeyConstraint>());
 
     QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
                        "\t\"id\"\tinteger,\n"
@@ -48,7 +48,7 @@ void TestTable::sqlGraveAccentOutput()
     tt.fields.push_back(f);
     tt.fields.emplace_back("car", "text");
     tt.fields.push_back(fkm);
-    tt.addConstraint(ConstraintPtr(new PrimaryKeyConstraint({f.name(), fkm.name()})));
+    tt.addConstraint({f.name(), fkm.name()}, std::make_shared<PrimaryKeyConstraint>());
     sqlb::setIdentifierQuoting(sqlb::GraveAccents);
 
     QCOMPARE(tt.sql(), "CREATE TABLE `testtable` (\n"
@@ -70,7 +70,7 @@ void TestTable::sqlSquareBracketsOutput()
     tt.fields.push_back(f);
     tt.fields.emplace_back("car", "text");
     tt.fields.push_back(fkm);
-    tt.addConstraint(ConstraintPtr(new PrimaryKeyConstraint({f.name(), fkm.name()})));
+    tt.addConstraint({f.name(), fkm.name()}, std::make_shared<PrimaryKeyConstraint>());
     sqlb::setIdentifierQuoting(sqlb::SquareBrackets);
 
     QCOMPARE(tt.sql(), "CREATE TABLE [testtable] (\n"
@@ -91,9 +91,9 @@ void TestTable::autoincrement()
     tt.fields.push_back(f);
     tt.fields.emplace_back("car", "text");
     tt.fields.push_back(fkm);
-    PrimaryKeyConstraint pk({f.name()});
+    PrimaryKeyConstraint pk;
     pk.setAutoIncrement(true);
-    tt.addConstraint(ConstraintPtr(new PrimaryKeyConstraint(pk)));
+    tt.addConstraint({f.name()}, std::make_shared<PrimaryKeyConstraint>(pk));
 
     QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
                        "\t\"id\"\tinteger,\n"
@@ -111,9 +111,9 @@ void TestTable::notnull()
     tt.fields.push_back(f);
     tt.fields.emplace_back("car", "text", true);
     tt.fields.push_back(fkm);
-    PrimaryKeyConstraint pk({f.name()});
+    PrimaryKeyConstraint pk;
     pk.setAutoIncrement(true);
-    tt.addConstraint(ConstraintPtr(new PrimaryKeyConstraint(pk)));
+    tt.addConstraint({f.name()}, std::make_shared<PrimaryKeyConstraint>(pk));
 
     QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
                        "\t\"id\"\tinteger,\n"
@@ -130,7 +130,7 @@ void TestTable::withoutRowid()
     tt.fields.push_back(f);
     tt.fields.emplace_back("b", "integer");
     tt.setWithoutRowidTable(true);
-    tt.addConstraint(ConstraintPtr(new PrimaryKeyConstraint({f.name()})));
+    tt.addConstraint({f.name()}, std::make_shared<PrimaryKeyConstraint>());
 
     QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
                        "\t\"a\"\tinteger,\n"
@@ -139,14 +139,43 @@ void TestTable::withoutRowid()
                        ") WITHOUT ROWID;");
 }
 
+void TestTable::strict()
+{
+    Table tt("testtable");
+    tt.fields.emplace_back("a", "integer");
+    tt.fields.emplace_back("b", "integer");
+    tt.setStrict(true);
+
+    QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
+                       "\t\"a\"\tinteger,\n"
+                       "\t\"b\"\tinteger\n"
+                       ") STRICT;");
+}
+
+void TestTable::strictAndWithoutRowid()
+{
+    Table tt("testtable");
+    Field f("a", "integer");
+    tt.fields.push_back(f);
+    tt.fields.emplace_back("b", "integer");
+    tt.setStrict(true);
+    tt.setWithoutRowidTable(true);
+    tt.addConstraint({f.name()}, std::make_shared<PrimaryKeyConstraint>());
+
+    QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
+                       "\t\"a\"\tinteger,\n"
+                       "\t\"b\"\tinteger,\n"
+                       "\tPRIMARY KEY(\"a\")\n"
+                       ") WITHOUT ROWID,STRICT;");
+}
+
 void TestTable::foreignKeys()
 {
     Table tt("testtable");
     Field f("a", "integer");
     tt.fields.push_back(f);
-    sqlb::ConstraintPtr fk = sqlb::ConstraintPtr(new sqlb::ForeignKeyClause("b", sqlb::StringVector{"c"}));
-    fk->setColumnList({f.name()});
-    tt.addConstraint(fk);
+    auto fk = std::make_shared<sqlb::ForeignKeyClause>("b", sqlb::StringVector{"c"});
+    tt.addConstraint({f.name()}, fk);
 
     QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
                        "\t\"a\"\tinteger,\n"
@@ -164,7 +193,7 @@ void TestTable::uniqueConstraint()
     tt.fields.push_back(f1);
     tt.fields.push_back(f2);
     tt.fields.push_back(f3);
-    tt.addConstraint(sqlb::ConstraintPtr(new sqlb::UniqueConstraint({f2.name(), f3.name()})));
+    tt.addConstraint({f2.name(), f3.name()}, std::make_shared<sqlb::UniqueConstraint>());
 
     QCOMPARE(tt.sql(), "CREATE TABLE \"testtable\" (\n"
                        "\t\"a\"\tinteger UNIQUE,\n"
@@ -195,9 +224,10 @@ void TestTable::parseSQL()
     QCOMPARE(tab.fields.at(2).type(), "VARCHAR(255)");
 
     auto pk = tab.primaryKey();
+    auto pkColumns = tab.primaryKeyColumns();
     QVERIFY(pk->autoIncrement());
-    QCOMPARE(pk->columnList().size(), 1);
-    QCOMPARE(pk->columnList().at(0), tab.fields.at(0).name());
+    QCOMPARE(pkColumns.size(), 1);
+    QCOMPARE(pkColumns.at(0).name(), tab.fields.at(0).name());
     QVERIFY(tab.fields.at(1).notnull());
     QCOMPARE(tab.fields.at(1).defaultValue(), "'xxxx'");
     QCOMPARE(tab.fields.at(1).check(), "");
@@ -232,9 +262,9 @@ void TestTable::parseSQLdefaultexpr()
     QCOMPARE(tab.fields.at(3).defaultValue(), "");
     QCOMPARE(tab.fields.at(3).check(), "");
 
-    auto pk = tab.primaryKey();
-    QCOMPARE(pk->columnList().size(), 1);
-    QCOMPARE(pk->columnList().at(0), tab.fields.at(0).name());
+    auto pk = tab.primaryKeyColumns();
+    QCOMPARE(pk.size(), 1);
+    QCOMPARE(pk.at(0).name(), tab.fields.at(0).name());
 }
 
 void TestTable::parseSQLMultiPk()
@@ -255,10 +285,10 @@ void TestTable::parseSQLMultiPk()
     QCOMPARE(tab.fields.at(0).type(), "integer");
     QCOMPARE(tab.fields.at(1).type(), "integer");
 
-    auto pk = tab.primaryKey();
-    QCOMPARE(pk->columnList().size(), 2);
-    QCOMPARE(pk->columnList().at(0), tab.fields.at(0).name());
-    QCOMPARE(pk->columnList().at(1), tab.fields.at(1).name());
+    auto pk = tab.primaryKeyColumns();
+    QCOMPARE(pk.size(), 2);
+    QCOMPARE(pk.at(0).name(), tab.fields.at(0).name());
+    QCOMPARE(pk.at(1).name(), tab.fields.at(1).name());
 }
 
 void TestTable::parseSQLForeignKey()
@@ -326,8 +356,32 @@ void TestTable::parseSQLWithoutRowid()
 
     Table tab(*Table::parseSQL(sSQL));
 
-    QCOMPARE(tab.primaryKey()->columnList(), {"a"});
+    QCOMPARE(tab.primaryKeyColumns().at(0).name(), "a");
     QCOMPARE(tab.rowidColumns(), {"a"});
+    QCOMPARE(tab.withoutRowidTable(), true);
+    QCOMPARE(tab.isStrict(), false);
+}
+
+void TestTable::parseSQLStrictTable()
+{
+    Table tab(*Table::parseSQL("CREATE TABLE test(a integer, b any) STRICT"));
+
+    QCOMPARE(tab.name(), "test");
+    QCOMPARE(tab.fields.at(0).name(), "a");
+    QCOMPARE(tab.fields.at(1).name(), "b");
+    QCOMPARE(tab.isStrict(), true);
+    QCOMPARE(tab.withoutRowidTable(), false);
+}
+
+void TestTable::parseSQLStrictAndWithoutRowidTable()
+{
+    Table tab(*Table::parseSQL("CREATE TABLE test(a integer, b any) STRICT, WITHOUT ROWID"));
+
+    QCOMPARE(tab.name(), "test");
+    QCOMPARE(tab.fields.at(0).name(), "a");
+    QCOMPARE(tab.fields.at(1).name(), "b");
+    QCOMPARE(tab.isStrict(), true);
+    QCOMPARE(tab.withoutRowidTable(), true);
 }
 
 void TestTable::parseNonASCIIChars()
@@ -376,10 +430,10 @@ void TestTable::parseSQLForeignKeys()
     QCOMPARE(tab.name(), "foreign_key_test");
     QCOMPARE(tab.fields.at(0).name(), "a");
     QCOMPARE(tab.fields.at(0).type(), "int");
-    QCOMPARE(std::dynamic_pointer_cast<sqlb::ForeignKeyClause>(tab.constraint({tab.fields.at(0).name()}, sqlb::Constraint::ForeignKeyConstraintType))->table(), "x");
+    QCOMPARE(tab.foreignKey({tab.fields.at(0).name()})->table(), "x");
     QCOMPARE(tab.fields.at(1).name(), "b");
     QCOMPARE(tab.fields.at(1).type(), "int");
-    QCOMPARE(std::dynamic_pointer_cast<sqlb::ForeignKeyClause>(tab.constraint({tab.fields.at(1).name()}, sqlb::Constraint::ForeignKeyConstraintType))->toString(), "\"w\"(\"y\",\"z\") on delete set null");
+    QCOMPARE(tab.foreignKey({tab.fields.at(1).name()})->toString(), "\"w\"(\"y\",\"z\") on delete set null");
 }
 
 void TestTable::parseSQLCheckConstraint()
@@ -461,7 +515,9 @@ void TestTable::rowValues()
     Table tab(*Table::parseSQL(sql));
     QCOMPARE(tab.name(), "test");
 
-    QCOMPARE(std::dynamic_pointer_cast<sqlb::CheckConstraint>(tab.constraint({}, sqlb::Constraint::CheckConstraintType))->expression(), "(\"a\", \"b\") = (1, 2)");
+    auto c = tab.checkConstraints();
+    QCOMPARE(c.size(), 1);
+    QCOMPARE(c.at(0)->expression(), "(\"a\", \"b\") = (1, 2)");
 }
 
 void TestTable::complexExpressions()
@@ -540,9 +596,20 @@ void TestTable::complexExpression()
     QCOMPARE(tab.fields.at(0).type(), "INTEGER");
     QCOMPARE(tab.fields.at(0).defaultValue(), "(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-' || '4' || substr(hex(randomblob(2)), 2) || '-' || substr('AB89', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))");
 
-    auto c = tab.constraints({}, sqlb::Constraint::CheckConstraintType);
+    auto c = tab.checkConstraints();
     QCOMPARE(c.size(), 1);
-    QCOMPARE(std::dynamic_pointer_cast<sqlb::CheckConstraint>(c.at(0))->expression(), "(\"a\" = 'S' AND \"b\" IS NOT NULL) OR (\"a\" IN ('A', 'P'))");
+    QCOMPARE(c.at(0)->expression(), "(\"a\" = 'S' AND \"b\" IS NOT NULL) OR (\"a\" IN ('A', 'P'))");
+}
+
+void TestTable::parseIdentifierWithDollar()
+{
+    std::string sql = "CREATE TABLE te$st(te$st$ INTEGER);";
+
+    Table tab(*Table::parseSQL(sql));
+    QCOMPARE(tab.name(), "te$st");
+
+    QCOMPARE(tab.fields.at(0).name(), "te$st$");
+    QCOMPARE(tab.fields.at(0).type(), "INTEGER");
 }
 
 void TestTable::parseTest()
@@ -573,21 +640,21 @@ void TestTable::parseTest_data()
     QTest::newRow("11") << std::string("CREATE TABLE t1(c1 text PRIMARY KEY DESC)");
     QTest::newRow("12") << std::string("CREATE TABLE t1(c1 text CONSTRAINT cons PRIMARY KEY DESC)");
     QTest::newRow("13") << std::string("CREATE TABLE t1(c1 text NOT NULL)");
-    // TODO Requires named column constraint: QTest::newRow("14") << std::string("CREATE TABLE t1(c1 text CONSTRAINT nm NOT NULL)");
+    QTest::newRow("14") << std::string("CREATE TABLE t1(c1 text CONSTRAINT nm NOT NULL)");
     QTest::newRow("15") << std::string("CREATE TABLE t1(c1 text NULL)");
     QTest::newRow("16") << std::string("CREATE TABLE t1(c1 text CONSTRAINT nm NULL)");
     QTest::newRow("17") << std::string("CREATE TABLE t1(c1 text UNIQUE)");
-    // TODO Requires named column constraint: QTest::newRow("18") << std::string("CREATE TABLE t1(c1 text CONSTRAINT un UNIQUE)");
+    QTest::newRow("18") << std::string("CREATE TABLE t1(c1 text CONSTRAINT un UNIQUE)");
     QTest::newRow("19") << std::string("CREATE TABLE t1(c1 text CHECK(c1!=0))");
-    // TODO Requires named column constraint: QTest::newRow("20") << std::string("CREATE TABLE t1(c1 text CONSTRAINT chk CHECK(c1!=0))");
+    QTest::newRow("20") << std::string("CREATE TABLE t1(c1 text CONSTRAINT chk CHECK(c1!=0))");
     QTest::newRow("21") << std::string("CREATE TABLE t1(c1 text DEFAULT 1)");
     QTest::newRow("22") << std::string("CREATE TABLE t1(c1 text DEFAULT -1)");
     QTest::newRow("23") << std::string("CREATE TABLE t1(c1 text DEFAULT +1)");
     QTest::newRow("24") << std::string("CREATE TABLE t1(c1 text DEFAULT -45.8e22)");
     QTest::newRow("25") << std::string("CREATE TABLE t1(c1 text DEFAULT (1+1))");
-    // TODO Requires named column constraint: QTest::newRow("26") << std::string("CREATE TABLE t1(c1 text CONSTRAINT \"1 2\" DEFAULT (1+1))");
+    QTest::newRow("26") << std::string("CREATE TABLE t1(c1 text CONSTRAINT \"1 2\" DEFAULT (1+1))");
     QTest::newRow("27") << std::string("CREATE TABLE t1(c1 text COLLATE nocase)");
-    // TODO Requires named column constraint: QTest::newRow("28") << std::string("CREATE TABLE t1(c1 text CONSTRAINT 'a x' COLLATE nocase)");
+    QTest::newRow("28") << std::string("CREATE TABLE t1(c1 text CONSTRAINT 'a x' COLLATE nocase)");
     QTest::newRow("29") << std::string("CREATE TABLE t1(c1 REFERENCES t2)");
     QTest::newRow("30") << std::string("CREATE TABLE t1(c1 CONSTRAINT abc REFERENCES t2)");
     QTest::newRow("31") << std::string("CREATE TABLE t1(c1 PRIMARY KEY NOT NULL UNIQUE CHECK(c1 IS 'ten') DEFAULT 123 REFERENCES t1);");
@@ -613,161 +680,155 @@ void TestTable::parseTest_data()
     QTest::newRow("51") << std::string("CREATE TABLE IF NOT EXISTS main.t1(a, b, c)");
     QTest::newRow("52") << std::string("CREATE TEMP TABLE IF NOT EXISTS temp.t1(a, b, c)");
     QTest::newRow("53") << std::string("CREATE TEMPORARY TABLE IF NOT EXISTS temp.t1(a, b, c)");
-    //QTest::newRow("54") << std::string("CREATE TABLE t1 AS SELECT * FROM t2");
-    //QTest::newRow("55") << std::string("CREATE TEMP TABLE t1 AS SELECT c, b, a FROM t2");
-    //QTest::newRow("56") << std::string("CREATE TABLE t1 AS SELECT count(*), max(b), min(a) FROM t2");
-    QTest::newRow("57") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH FULL ON DELETE SET NULL ON UPDATE RESTRICT DEFERRABLE)");
-    QTest::newRow("58") << std::string("CREATE TABLE t1(a REFERENCES t2(x) ON DELETE RESTRICT ON UPDATE SET NULL MATCH FULL NOT DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("59") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE SET NULL ON UPDATE CASCADE DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("60") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE RESTRICT ON UPDATE SET DEFAULT )");
-    QTest::newRow("61") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE RESTRICT ON UPDATE RESTRICT DEFERRABLE)");
-    QTest::newRow("62") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE NO ACTION ON UPDATE SET DEFAULT NOT DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("63") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE SET NULL ON UPDATE CASCADE NOT DEFERRABLE)");
-    QTest::newRow("64") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE SET DEFAULT ON UPDATE SET NULL DEFERRABLE)");
-    QTest::newRow("65") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE SET DEFAULT  NOT DEFERRABLE)");
-    QTest::newRow("66") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE RESTRICT ON UPDATE SET DEFAULT NOT DEFERRABLE INITIALLY DEFERRED)");
-    QTest::newRow("67") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE RESTRICT ON UPDATE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("68") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE NO ACTION ON UPDATE SET DEFAULT NOT DEFERRABLE)");
-    QTest::newRow("69") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH STICK ON DELETE CASCADE ON UPDATE CASCADE DEFERRABLE)");
-    QTest::newRow("70") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH STICK ON UPDATE SET NULL NOT DEFERRABLE INITIALLY DEFERRED)");
-    QTest::newRow("71") << std::string("CREATE TABLE t1(a REFERENCES t2(x) ON DELETE SET NULL ON UPDATE NO ACTION DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("72") << std::string("CREATE TABLE t1(a REFERENCES t2(x) ON DELETE RESTRICT ON UPDATE NO ACTION NOT DEFERRABLE)");
-    QTest::newRow("73") << std::string("CREATE TABLE t1(a REFERENCES t2(x) NOT DEFERRABLE INITIALLY DEFERRED)");
-    QTest::newRow("74") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE SET NULL ON UPDATE SET NULL DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("75") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE SET NULL ON UPDATE SET DEFAULT NOT DEFERRABLE)");
-    QTest::newRow("76") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE SET DEFAULT ON UPDATE SET NULL )");
-    QTest::newRow("77") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("78") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL ON DELETE SET NULL ON UPDATE RESTRICT NOT DEFERRABLE)");
-    QTest::newRow("79") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL ON DELETE SET NULL ON UPDATE NO ACTION DEFERRABLE)");
-    QTest::newRow("80") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL ON DELETE CASCADE ON UPDATE SET DEFAULT )");
-    QTest::newRow("81") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL NOT DEFERRABLE)");
-    QTest::newRow("82") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH SIMPLE ON DELETE SET DEFAULT ON UPDATE CASCADE DEFERRABLE)");
-    QTest::newRow("83") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH STICK ON DELETE SET NULL ON UPDATE NO ACTION DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("84") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH STICK ON DELETE NO ACTION ON UPDATE SET DEFAULT NOT DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("85") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH STICK ON UPDATE SET DEFAULT DEFERRABLE INITIALLY IMMEDIATE)");
-    QTest::newRow("86") << std::string("CREATE TABLE t1(a REFERENCES t2 ON DELETE RESTRICT ON UPDATE NO ACTION DEFERRABLE INITIALLY DEFERRED)");
-    QTest::newRow("87") << std::string("CREATE TABLE sqlit_abc(a, b, c)");
-    QTest::newRow("88") << std::string("CREATE TABLE temp.sqlitehelloworld(x)");
-    QTest::newRow("89") << std::string("CREATE TABLE auxa.\"sqlite\"(x, y)");
-    QTest::newRow("90") << std::string("CREATE TABLE auxb.\"sqlite-\"(z)");
-    QTest::newRow("91") << std::string("CREATE TABLE \"SQLITE-TBL\"(z)");
-    QTest::newRow("92") << std::string("CREATE TABLE main.abc(a, b, c)");
-    QTest::newRow("93") << std::string("CREATE TABLE temp.helloworld(x)");
-    QTest::newRow("94") << std::string("CREATE TABLE auxa.\"t 1\"(x, y)");
-    QTest::newRow("95") << std::string("CREATE TABLE auxb.xyz(z)");
-    QTest::newRow("96") << std::string("CREATE TABLE main.abc(a, b, c)");
-    QTest::newRow("97") << std::string("CREATE TABLE main.t1(a, b, c)");
-    QTest::newRow("98") << std::string("CREATE TABLE temp.tmp(a, b, c)");
-    QTest::newRow("99") << std::string("CREATE TABLE auxb.tbl(x, y)");
-    QTest::newRow("100") << std::string("CREATE TABLE auxb.t1(k, v)");
-    QTest::newRow("101") << std::string("CREATE TABLE auxa.next(c, d)");
-    QTest::newRow("102") << std::string("CREATE TEMP TABLE t1(a, b)");
-    QTest::newRow("103") << std::string("CREATE TEMPORARY TABLE t2(a, b)");
-    QTest::newRow("104") << std::string("CREATE TEMP TABLE temp.t1(a, b)");
-    QTest::newRow("105") << std::string("CREATE TEMPORARY TABLE temp.t2(a, b)");
-    QTest::newRow("106") << std::string("CREATE TEMP TABLE TEMP.t3(a, b)");
-    QTest::newRow("107") << std::string("CREATE TEMPORARY TABLE TEMP.xxx(x)");
-    QTest::newRow("108") << std::string("CREATE TABLE t1(a, b)");
-    QTest::newRow("109") << std::string("CREATE TABLE t2(a, b)");
-    QTest::newRow("110") << std::string("CREATE TABLE t3(a, b)");
-    QTest::newRow("111") << std::string("CREATE TABLE xxx(x)");
-    QTest::newRow("112") << std::string("CREATE TABLE auxa.t1(a, b)");
-    QTest::newRow("113") << std::string("CREATE TABLE auxa.i1(a, b)");
-    QTest::newRow("114") << std::string("CREATE TABLE auxa.v1(a, b)");
-    QTest::newRow("115") << std::string("CREATE TABLE tbl1(a, b)");
-    QTest::newRow("116") << std::string("CREATE TABLE idx1(a, b)");
-    QTest::newRow("117") << std::string("CREATE TABLE view1(a, b)");
-    QTest::newRow("118") << std::string("CREATE TABLE IF NOT EXISTS t1(a, b)");
-    QTest::newRow("119") << std::string("CREATE TABLE IF NOT EXISTS auxa.tbl1(a, b)");
-    QTest::newRow("120") << std::string("CREATE TABLE IF NOT EXISTS v1(a, b)");
-    QTest::newRow("121") << std::string("CREATE TABLE IF NOT EXISTS auxa.view1(a, b)");
-    QTest::newRow("122") << std::string("CREATE TABLE t1(a, b, c);");
-    QTest::newRow("123") << std::string("CREATE TABLE t2(d, e, f);");
-    QTest::newRow("124") << std::string("CREATE TABLE t3(g BIGINT, h VARCHAR(10));");
-    QTest::newRow("125") << std::string("CREATE TABLE t4(i BLOB, j ANYOLDATA);");
-    QTest::newRow("126") << std::string("CREATE TABLE t5(k FLOAT, l INTEGER);");
-    QTest::newRow("127") << std::string("CREATE TABLE t6(m DEFAULT 10, n DEFAULT 5, PRIMARY KEY(m, n));");
-    QTest::newRow("128") << std::string("CREATE TABLE t7(x INTEGER PRIMARY KEY);");
-    QTest::newRow("129") << std::string("CREATE TABLE t8(o COLLATE nocase DEFAULT 'abc');");
-    QTest::newRow("130") << std::string("CREATE TABLE t9(p NOT NULL, q DOUBLE CHECK (q!=0), r STRING UNIQUE);");
-    QTest::newRow("131") << std::string("CREATE TABLE t1(x VARCHAR(10), y INTEGER, z DOUBLE);");
-    QTest::newRow("132") << std::string("CREATE TABLE t2(a DATETIME, b STRING, c REAL);");
-    QTest::newRow("133") << std::string("CREATE TABLE t3(o, t);");
-    QTest::newRow("134") << std::string("CREATE TABLE t4(a DEFAULT NULL,b DEFAULT 'string constant',c DEFAULT X'424C4F42',d DEFAULT 1,e DEFAULT -1,f DEFAULT 3.14,g DEFAULT -3.14,h DEFAULT ( substr('abcd', 0, 2) || 'cd' ),i DEFAULT CURRENT_TIME,j DEFAULT CURRENT_DATE,k DEFAULT CURRENT_TIMESTAMP);");
-    QTest::newRow("135") << std::string("CREATE TABLE t5(x DEFAULT ( 'abc' ))");
-    QTest::newRow("136") << std::string("CREATE TABLE t5(x DEFAULT ( 1 IN (1, 2, 3) ))");
-    QTest::newRow("137") << std::string("CREATE TABLE t5(a DEFAULT NULL,  b DEFAULT 'text value',  c DEFAULT X'424C4F42',d DEFAULT -45678.6,e DEFAULT 394507);");
-    QTest::newRow("138") << std::string("CREATE TABLE t6(a DEFAULT ( nextint() ), b DEFAULT ( nextint() ));");
-    QTest::newRow("139") << std::string("CREATE TABLE t7(a DEFAULT CURRENT_TIME, b DEFAULT CURRENT_DATE, c DEFAULT CURRENT_TIMESTAMP);");
-    QTest::newRow("140") << std::string("CREATE TABLE t8(a COLLATE nocase, b COLLATE rtrim, c COLLATE binary, d);");
-    QTest::newRow("141") << std::string("CREATE TABLE t1(a, b, c)");
-    QTest::newRow("142") << std::string("CREATE TABLE t2(a PRIMARY KEY, b, c)");
-    QTest::newRow("143") << std::string("CREATE TABLE t3(a, b, c, PRIMARY KEY(a))");
-    QTest::newRow("144") << std::string("CREATE TABLE t4(a, b, c, PRIMARY KEY(c,b,a))");
-    QTest::newRow("145") << std::string("CREATE TABLE t5(a, b INTEGER PRIMARY KEY, c)");
-    QTest::newRow("146") << std::string("CREATE TABLE t5(a PRIMARY KEY, b, c)");
-    QTest::newRow("147") << std::string("CREATE TABLE t5(a, b, c, PRIMARY KEY(a))");
-    QTest::newRow("148") << std::string("CREATE TABLE t5(a, b, c, PRIMARY KEY(c,b,a))");
-    QTest::newRow("149") << std::string("CREATE TABLE t5(a, b INTEGER PRIMARY KEY, c)");
-    QTest::newRow("150") << std::string("CREATE TABLE t1(a UNIQUE, b UNIQUE)");
-    QTest::newRow("151") << std::string("CREATE TABLE t2(a UNIQUE, b, c, UNIQUE(c, b))");
-    QTest::newRow("152") << std::string("CREATE TABLE t3(a, b, c, UNIQUE(a), UNIQUE(b), UNIQUE(c))");
-    QTest::newRow("153") << std::string("CREATE TABLE t4(a, b, c, UNIQUE(a, b, c))");
-    QTest::newRow("154") << std::string("CREATE TABLE t1(a TEXT PRIMARY KEY, b)");
-    QTest::newRow("155") << std::string("CREATE TABLE t1(a INTEGER PRIMARY KEY, b)");
-    QTest::newRow("156") << std::string("CREATE TABLE t1(a TEXT UNIQUE, b)");
-    QTest::newRow("157") << std::string("CREATE TABLE t1(a PRIMARY KEY, b TEXT UNIQUE)");
-    QTest::newRow("158") << std::string("CREATE TABLE t1(a PRIMARY KEY, b, c, UNIQUE(c, b))");
-    QTest::newRow("159") << std::string("CREATE TABLE t1(a, b PRIMARY KEY);");
-    QTest::newRow("160") << std::string("CREATE TABLE t2(a, b, c, UNIQUE(b, c));");
-    QTest::newRow("161") << std::string("CREATE TABLE x1(a TEXT, b INTEGER CHECK( b>0 ));");
-    QTest::newRow("162") << std::string("CREATE TABLE t1(a TEXT, b INTEGER, CHECK( b>0 ));");
-    QTest::newRow("163") << std::string("CREATE TABLE x2(a CHECK( a||b ), b);");
-    QTest::newRow("164") << std::string("CREATE TABLE t2(a, b, CHECK( a||b ));");
-    QTest::newRow("165") << std::string("CREATE TABLE t1(a NOT NULL, b)");
-    QTest::newRow("166") << std::string("CREATE TABLE t2(a PRIMARY KEY NOT NULL, b)");
-    QTest::newRow("167") << std::string("CREATE TABLE t3(a NOT NULL, b NOT NULL, c NOT NULL UNIQUE)");
-    // TODO Requires NOT NULL table constraints: QTest::newRow("168") << std::string("CREATE TABLE t4(a, b, NOT NULL(a))");
-    // TODO Requires NOT NULL table constraints: QTest::newRow("169") << std::string("CREATE TABLE t4(a PRIMARY KEY, b, NOT NULL(a))");
-    // TODO Requires NOT NULL table constraints: QTest::newRow("170") << std::string("CREATE TABLE t4(a, b, c UNIQUE, NOT NULL(a, b, c))");
-    QTest::newRow("171") << std::string("CREATE TABLE t1_ab(a PRIMARY KEY ON CONFLICT ABORT, b);");
-    QTest::newRow("172") << std::string("CREATE TABLE t1_ro(a PRIMARY KEY ON CONFLICT ROLLBACK, b);");
-    QTest::newRow("173") << std::string("CREATE TABLE t1_ig(a PRIMARY KEY ON CONFLICT IGNORE, b);");
-    QTest::newRow("174") << std::string("CREATE TABLE t1_fa(a PRIMARY KEY ON CONFLICT FAIL, b);");
-    QTest::newRow("175") << std::string("CREATE TABLE t1_re(a PRIMARY KEY ON CONFLICT REPLACE, b);");
-    QTest::newRow("176") << std::string("CREATE TABLE t1_xx(a PRIMARY KEY, b);");
-    // TODO Requires NOT NULL conflict actions: QTest::newRow("177") << std::string("CREATE TABLE t2_ab(a, b NOT NULL ON CONFLICT ABORT);");
-    // TODO Requires NOT NULL conflict actions: QTest::newRow("178") << std::string("CREATE TABLE t2_ro(a, b NOT NULL ON CONFLICT ROLLBACK);");
-    // TODO Requires NOT NULL conflict actions: QTest::newRow("179") << std::string("CREATE TABLE t2_ig(a, b NOT NULL ON CONFLICT IGNORE);");
-    // TODO Requires NOT NULL conflict actions: QTest::newRow("180") << std::string("CREATE TABLE t2_fa(a, b NOT NULL ON CONFLICT FAIL);");
-    // TODO Requires NOT NULL conflict actions: QTest::newRow("181") << std::string("CREATE TABLE t2_re(a, b NOT NULL ON CONFLICT REPLACE);");
-    QTest::newRow("182") << std::string("CREATE TABLE t2_xx(a, b NOT NULL);");
-    QTest::newRow("183") << std::string("CREATE TABLE t3_ab(a, b, UNIQUE(a, b) ON CONFLICT ABORT);");
-    QTest::newRow("184") << std::string("CREATE TABLE t3_ro(a, b, UNIQUE(a, b) ON CONFLICT ROLLBACK);");
-    QTest::newRow("185") << std::string("CREATE TABLE t3_ig(a, b, UNIQUE(a, b) ON CONFLICT IGNORE);");
-    QTest::newRow("186") << std::string("CREATE TABLE t3_fa(a, b, UNIQUE(a, b) ON CONFLICT FAIL);");
-    QTest::newRow("187") << std::string("CREATE TABLE t3_re(a, b, UNIQUE(a, b) ON CONFLICT REPLACE);");
-    QTest::newRow("188") << std::string("CREATE TABLE t3_xx(a, b, UNIQUE(a, b));");
-    QTest::newRow("189") << std::string("CREATE TABLE t4(a, b CHECK (b!=10));");
-    QTest::newRow("190") << std::string("CREATE TABLE t2(oid, b);");
-    QTest::newRow("191") << std::string("CREATE TABLE t3(a, _rowid_);");
-    QTest::newRow("192") << std::string("CREATE TABLE t4(a, b, rowid);");
-    QTest::newRow("193") << std::string("CREATE TABLE t5(pk integer primary key)");
-    QTest::newRow("194") << std::string("CREATE TABLE t5(pk integer, primary key(pk))");
-    QTest::newRow("195") << std::string("CREATE TABLE t5(pk integer, v integer, primary key(pk))");
-    QTest::newRow("196") << std::string("CREATE TABLE t5(pk integer, v integer, primary key(pk, v))");
-    QTest::newRow("197") << std::string("CREATE TABLE t5(pk int, v integer, primary key(pk, v))");
-    QTest::newRow("198") << std::string("CREATE TABLE t5(pk int, v integer, primary key(pk))");
-    QTest::newRow("199") << std::string("CREATE TABLE t5(pk int primary key, v integer)");
-    QTest::newRow("200") << std::string("CREATE TABLE t5(pk inTEger primary key)");
-    QTest::newRow("201") << std::string("CREATE TABLE t5(pk inteGEr, primary key(pk))");
-    QTest::newRow("202") << std::string("CREATE TABLE t5(pk INTEGER, v integer, primary key(pk))");
-    QTest::newRow("203") << std::string("CREATE TABLE t6(pk INT primary key);");
-    QTest::newRow("204") << std::string("CREATE TABLE t7(pk BIGINT primary key);");
-    QTest::newRow("205") << std::string("CREATE TABLE t8(pk SHORT INTEGER primary key);");
-    QTest::newRow("206") << std::string("CREATE TABLE t9(pk UNSIGNED INTEGER primary key);");
-    QTest::newRow("207") << std::string("CREATE TABLE t(x INTEGER PRIMARY KEY ASC, y, z)");
-    QTest::newRow("208") << std::string("CREATE TABLE t(x INTEGER, y, z, PRIMARY KEY(x ASC))");
-    QTest::newRow("209") << std::string("CREATE TABLE t(x INTEGER, y, z, PRIMARY KEY(x DESC))");
-    QTest::newRow("210") << std::string("CREATE TABLE t(x INTEGER PRIMARY KEY DESC, y, z)");
+    QTest::newRow("54") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH FULL ON DELETE SET NULL ON UPDATE RESTRICT DEFERRABLE)");
+    QTest::newRow("55") << std::string("CREATE TABLE t1(a REFERENCES t2(x) ON DELETE RESTRICT ON UPDATE SET NULL MATCH FULL NOT DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("56") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE SET NULL ON UPDATE CASCADE DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("57") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE RESTRICT ON UPDATE SET DEFAULT )");
+    QTest::newRow("58") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE RESTRICT ON UPDATE RESTRICT DEFERRABLE)");
+    QTest::newRow("59") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH PARTIAL ON DELETE NO ACTION ON UPDATE SET DEFAULT NOT DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("60") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE SET NULL ON UPDATE CASCADE NOT DEFERRABLE)");
+    QTest::newRow("61") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE SET DEFAULT ON UPDATE SET NULL DEFERRABLE)");
+    QTest::newRow("62") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE SET DEFAULT  NOT DEFERRABLE)");
+    QTest::newRow("63") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE RESTRICT ON UPDATE SET DEFAULT NOT DEFERRABLE INITIALLY DEFERRED)");
+    QTest::newRow("64") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE RESTRICT ON UPDATE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("65") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH SIMPLE ON DELETE NO ACTION ON UPDATE SET DEFAULT NOT DEFERRABLE)");
+    QTest::newRow("66") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH STICK ON DELETE CASCADE ON UPDATE CASCADE DEFERRABLE)");
+    QTest::newRow("67") << std::string("CREATE TABLE t1(a REFERENCES t2(x) MATCH STICK ON UPDATE SET NULL NOT DEFERRABLE INITIALLY DEFERRED)");
+    QTest::newRow("68") << std::string("CREATE TABLE t1(a REFERENCES t2(x) ON DELETE SET NULL ON UPDATE NO ACTION DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("69") << std::string("CREATE TABLE t1(a REFERENCES t2(x) ON DELETE RESTRICT ON UPDATE NO ACTION NOT DEFERRABLE)");
+    QTest::newRow("70") << std::string("CREATE TABLE t1(a REFERENCES t2(x) NOT DEFERRABLE INITIALLY DEFERRED)");
+    QTest::newRow("71") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE SET NULL ON UPDATE SET NULL DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("72") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE SET NULL ON UPDATE SET DEFAULT NOT DEFERRABLE)");
+    QTest::newRow("73") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE SET DEFAULT ON UPDATE SET NULL )");
+    QTest::newRow("74") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH FULL ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("75") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL ON DELETE SET NULL ON UPDATE RESTRICT NOT DEFERRABLE)");
+    QTest::newRow("76") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL ON DELETE SET NULL ON UPDATE NO ACTION DEFERRABLE)");
+    QTest::newRow("77") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL ON DELETE CASCADE ON UPDATE SET DEFAULT )");
+    QTest::newRow("78") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH PARTIAL NOT DEFERRABLE)");
+    QTest::newRow("79") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH SIMPLE ON DELETE SET DEFAULT ON UPDATE CASCADE DEFERRABLE)");
+    QTest::newRow("80") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH STICK ON DELETE SET NULL ON UPDATE NO ACTION DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("81") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH STICK ON DELETE NO ACTION ON UPDATE SET DEFAULT NOT DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("82") << std::string("CREATE TABLE t1(a REFERENCES t2 MATCH STICK ON UPDATE SET DEFAULT DEFERRABLE INITIALLY IMMEDIATE)");
+    QTest::newRow("83") << std::string("CREATE TABLE t1(a REFERENCES t2 ON DELETE RESTRICT ON UPDATE NO ACTION DEFERRABLE INITIALLY DEFERRED)");
+    QTest::newRow("84") << std::string("CREATE TABLE sqlit_abc(a, b, c)");
+    QTest::newRow("85") << std::string("CREATE TABLE temp.sqlitehelloworld(x)");
+    QTest::newRow("86") << std::string("CREATE TABLE auxa.\"sqlite\"(x, y)");
+    QTest::newRow("87") << std::string("CREATE TABLE auxb.\"sqlite-\"(z)");
+    QTest::newRow("88") << std::string("CREATE TABLE \"SQLITE-TBL\"(z)");
+    QTest::newRow("89") << std::string("CREATE TABLE main.abc(a, b, c)");
+    QTest::newRow("90") << std::string("CREATE TABLE temp.helloworld(x)");
+    QTest::newRow("91") << std::string("CREATE TABLE auxa.\"t 1\"(x, y)");
+    QTest::newRow("92") << std::string("CREATE TABLE auxb.xyz(z)");
+    QTest::newRow("93") << std::string("CREATE TABLE main.abc(a, b, c)");
+    QTest::newRow("94") << std::string("CREATE TABLE main.t1(a, b, c)");
+    QTest::newRow("95") << std::string("CREATE TABLE temp.tmp(a, b, c)");
+    QTest::newRow("96") << std::string("CREATE TABLE auxb.tbl(x, y)");
+    QTest::newRow("97") << std::string("CREATE TABLE auxb.t1(k, v)");
+    QTest::newRow("98") << std::string("CREATE TABLE auxa.next(c, d)");
+    QTest::newRow("99") << std::string("CREATE TEMP TABLE t1(a, b)");
+    QTest::newRow("100") << std::string("CREATE TEMPORARY TABLE t2(a, b)");
+    QTest::newRow("101") << std::string("CREATE TEMP TABLE temp.t1(a, b)");
+    QTest::newRow("102") << std::string("CREATE TEMPORARY TABLE temp.t2(a, b)");
+    QTest::newRow("103") << std::string("CREATE TEMP TABLE TEMP.t3(a, b)");
+    QTest::newRow("104") << std::string("CREATE TEMPORARY TABLE TEMP.xxx(x)");
+    QTest::newRow("105") << std::string("CREATE TABLE t1(a, b)");
+    QTest::newRow("106") << std::string("CREATE TABLE t2(a, b)");
+    QTest::newRow("107") << std::string("CREATE TABLE t3(a, b)");
+    QTest::newRow("108") << std::string("CREATE TABLE xxx(x)");
+    QTest::newRow("109") << std::string("CREATE TABLE auxa.t1(a, b)");
+    QTest::newRow("110") << std::string("CREATE TABLE auxa.i1(a, b)");
+    QTest::newRow("111") << std::string("CREATE TABLE auxa.v1(a, b)");
+    QTest::newRow("112") << std::string("CREATE TABLE tbl1(a, b)");
+    QTest::newRow("113") << std::string("CREATE TABLE idx1(a, b)");
+    QTest::newRow("114") << std::string("CREATE TABLE view1(a, b)");
+    QTest::newRow("115") << std::string("CREATE TABLE IF NOT EXISTS t1(a, b)");
+    QTest::newRow("116") << std::string("CREATE TABLE IF NOT EXISTS auxa.tbl1(a, b)");
+    QTest::newRow("117") << std::string("CREATE TABLE IF NOT EXISTS v1(a, b)");
+    QTest::newRow("118") << std::string("CREATE TABLE IF NOT EXISTS auxa.view1(a, b)");
+    QTest::newRow("119") << std::string("CREATE TABLE t1(a, b, c);");
+    QTest::newRow("120") << std::string("CREATE TABLE t2(d, e, f);");
+    QTest::newRow("121") << std::string("CREATE TABLE t3(g BIGINT, h VARCHAR(10));");
+    QTest::newRow("122") << std::string("CREATE TABLE t4(i BLOB, j ANYOLDATA);");
+    QTest::newRow("123") << std::string("CREATE TABLE t5(k FLOAT, l INTEGER);");
+    QTest::newRow("124") << std::string("CREATE TABLE t6(m DEFAULT 10, n DEFAULT 5, PRIMARY KEY(m, n));");
+    QTest::newRow("125") << std::string("CREATE TABLE t7(x INTEGER PRIMARY KEY);");
+    QTest::newRow("126") << std::string("CREATE TABLE t8(o COLLATE nocase DEFAULT 'abc');");
+    QTest::newRow("127") << std::string("CREATE TABLE t9(p NOT NULL, q DOUBLE CHECK (q!=0), r STRING UNIQUE);");
+    QTest::newRow("128") << std::string("CREATE TABLE t1(x VARCHAR(10), y INTEGER, z DOUBLE);");
+    QTest::newRow("129") << std::string("CREATE TABLE t2(a DATETIME, b STRING, c REAL);");
+    QTest::newRow("130") << std::string("CREATE TABLE t3(o, t);");
+    QTest::newRow("131") << std::string("CREATE TABLE t4(a DEFAULT NULL,b DEFAULT 'string constant',c DEFAULT X'424C4F42',d DEFAULT 1,e DEFAULT -1,f DEFAULT 3.14,g DEFAULT -3.14,h DEFAULT ( substr('abcd', 0, 2) || 'cd' ),i DEFAULT CURRENT_TIME,j DEFAULT CURRENT_DATE,k DEFAULT CURRENT_TIMESTAMP);");
+    QTest::newRow("132") << std::string("CREATE TABLE t5(x DEFAULT ( 'abc' ))");
+    QTest::newRow("133") << std::string("CREATE TABLE t5(x DEFAULT ( 1 IN (1, 2, 3) ))");
+    QTest::newRow("134") << std::string("CREATE TABLE t5(a DEFAULT NULL,  b DEFAULT 'text value',  c DEFAULT X'424C4F42',d DEFAULT -45678.6,e DEFAULT 394507);");
+    QTest::newRow("135") << std::string("CREATE TABLE t6(a DEFAULT ( nextint() ), b DEFAULT ( nextint() ));");
+    QTest::newRow("136") << std::string("CREATE TABLE t7(a DEFAULT CURRENT_TIME, b DEFAULT CURRENT_DATE, c DEFAULT CURRENT_TIMESTAMP);");
+    QTest::newRow("137") << std::string("CREATE TABLE t8(a COLLATE nocase, b COLLATE rtrim, c COLLATE binary, d);");
+    QTest::newRow("138") << std::string("CREATE TABLE t1(a, b, c)");
+    QTest::newRow("139") << std::string("CREATE TABLE t2(a PRIMARY KEY, b, c)");
+    QTest::newRow("140") << std::string("CREATE TABLE t3(a, b, c, PRIMARY KEY(a))");
+    QTest::newRow("141") << std::string("CREATE TABLE t4(a, b, c, PRIMARY KEY(c,b,a))");
+    QTest::newRow("142") << std::string("CREATE TABLE t5(a, b INTEGER PRIMARY KEY, c)");
+    QTest::newRow("143") << std::string("CREATE TABLE t5(a PRIMARY KEY, b, c)");
+    QTest::newRow("144") << std::string("CREATE TABLE t5(a, b, c, PRIMARY KEY(a))");
+    QTest::newRow("145") << std::string("CREATE TABLE t5(a, b, c, PRIMARY KEY(c,b,a))");
+    QTest::newRow("146") << std::string("CREATE TABLE t5(a, b INTEGER PRIMARY KEY, c)");
+    QTest::newRow("147") << std::string("CREATE TABLE t1(a UNIQUE, b UNIQUE)");
+    QTest::newRow("148") << std::string("CREATE TABLE t2(a UNIQUE, b, c, UNIQUE(c, b))");
+    QTest::newRow("149") << std::string("CREATE TABLE t3(a, b, c, UNIQUE(a), UNIQUE(b), UNIQUE(c))");
+    QTest::newRow("150") << std::string("CREATE TABLE t4(a, b, c, UNIQUE(a, b, c))");
+    QTest::newRow("151") << std::string("CREATE TABLE t1(a TEXT PRIMARY KEY, b)");
+    QTest::newRow("152") << std::string("CREATE TABLE t1(a INTEGER PRIMARY KEY, b)");
+    QTest::newRow("153") << std::string("CREATE TABLE t1(a TEXT UNIQUE, b)");
+    QTest::newRow("154") << std::string("CREATE TABLE t1(a PRIMARY KEY, b TEXT UNIQUE)");
+    QTest::newRow("155") << std::string("CREATE TABLE t1(a PRIMARY KEY, b, c, UNIQUE(c, b))");
+    QTest::newRow("156") << std::string("CREATE TABLE t1(a, b PRIMARY KEY);");
+    QTest::newRow("157") << std::string("CREATE TABLE t2(a, b, c, UNIQUE(b, c));");
+    QTest::newRow("158") << std::string("CREATE TABLE x1(a TEXT, b INTEGER CHECK( b>0 ));");
+    QTest::newRow("159") << std::string("CREATE TABLE t1(a TEXT, b INTEGER, CHECK( b>0 ));");
+    QTest::newRow("160") << std::string("CREATE TABLE x2(a CHECK( a||b ), b);");
+    QTest::newRow("161") << std::string("CREATE TABLE t2(a, b, CHECK( a||b ));");
+    QTest::newRow("162") << std::string("CREATE TABLE t1(a NOT NULL, b)");
+    QTest::newRow("163") << std::string("CREATE TABLE t2(a PRIMARY KEY NOT NULL, b)");
+    QTest::newRow("164") << std::string("CREATE TABLE t3(a NOT NULL, b NOT NULL, c NOT NULL UNIQUE)");
+    QTest::newRow("165") << std::string("CREATE TABLE t1_ab(a PRIMARY KEY ON CONFLICT ABORT, b);");
+    QTest::newRow("166") << std::string("CREATE TABLE t1_ro(a PRIMARY KEY ON CONFLICT ROLLBACK, b);");
+    QTest::newRow("167") << std::string("CREATE TABLE t1_ig(a PRIMARY KEY ON CONFLICT IGNORE, b);");
+    QTest::newRow("168") << std::string("CREATE TABLE t1_fa(a PRIMARY KEY ON CONFLICT FAIL, b);");
+    QTest::newRow("169") << std::string("CREATE TABLE t1_re(a PRIMARY KEY ON CONFLICT REPLACE, b);");
+    QTest::newRow("170") << std::string("CREATE TABLE t1_xx(a PRIMARY KEY, b);");
+    QTest::newRow("171") << std::string("CREATE TABLE t2_ab(a, b NOT NULL ON CONFLICT ABORT);");
+    QTest::newRow("172") << std::string("CREATE TABLE t2_ro(a, b NOT NULL ON CONFLICT ROLLBACK);");
+    QTest::newRow("173") << std::string("CREATE TABLE t2_ig(a, b NOT NULL ON CONFLICT IGNORE);");
+    QTest::newRow("174") << std::string("CREATE TABLE t2_fa(a, b NOT NULL ON CONFLICT FAIL);");
+    QTest::newRow("175") << std::string("CREATE TABLE t2_re(a, b NOT NULL ON CONFLICT REPLACE);");
+    QTest::newRow("176") << std::string("CREATE TABLE t2_xx(a, b NOT NULL);");
+    QTest::newRow("177") << std::string("CREATE TABLE t3_ab(a, b, UNIQUE(a, b) ON CONFLICT ABORT);");
+    QTest::newRow("178") << std::string("CREATE TABLE t3_ro(a, b, UNIQUE(a, b) ON CONFLICT ROLLBACK);");
+    QTest::newRow("179") << std::string("CREATE TABLE t3_ig(a, b, UNIQUE(a, b) ON CONFLICT IGNORE);");
+    QTest::newRow("180") << std::string("CREATE TABLE t3_fa(a, b, UNIQUE(a, b) ON CONFLICT FAIL);");
+    QTest::newRow("181") << std::string("CREATE TABLE t3_re(a, b, UNIQUE(a, b) ON CONFLICT REPLACE);");
+    QTest::newRow("182") << std::string("CREATE TABLE t3_xx(a, b, UNIQUE(a, b));");
+    QTest::newRow("183") << std::string("CREATE TABLE t4(a, b CHECK (b!=10));");
+    QTest::newRow("184") << std::string("CREATE TABLE t2(oid, b);");
+    QTest::newRow("185") << std::string("CREATE TABLE t3(a, _rowid_);");
+    QTest::newRow("186") << std::string("CREATE TABLE t4(a, b, rowid);");
+    QTest::newRow("187") << std::string("CREATE TABLE t5(pk integer primary key)");
+    QTest::newRow("188") << std::string("CREATE TABLE t5(pk integer, primary key(pk))");
+    QTest::newRow("189") << std::string("CREATE TABLE t5(pk integer, v integer, primary key(pk))");
+    QTest::newRow("190") << std::string("CREATE TABLE t5(pk integer, v integer, primary key(pk, v))");
+    QTest::newRow("191") << std::string("CREATE TABLE t5(pk int, v integer, primary key(pk, v))");
+    QTest::newRow("192") << std::string("CREATE TABLE t5(pk int, v integer, primary key(pk))");
+    QTest::newRow("193") << std::string("CREATE TABLE t5(pk int primary key, v integer)");
+    QTest::newRow("194") << std::string("CREATE TABLE t5(pk inTEger primary key)");
+    QTest::newRow("195") << std::string("CREATE TABLE t5(pk inteGEr, primary key(pk))");
+    QTest::newRow("196") << std::string("CREATE TABLE t5(pk INTEGER, v integer, primary key(pk))");
+    QTest::newRow("197") << std::string("CREATE TABLE t6(pk INT primary key);");
+    QTest::newRow("198") << std::string("CREATE TABLE t7(pk BIGINT primary key);");
+    QTest::newRow("199") << std::string("CREATE TABLE t8(pk SHORT INTEGER primary key);");
+    QTest::newRow("200") << std::string("CREATE TABLE t9(pk UNSIGNED INTEGER primary key);");
+    QTest::newRow("201") << std::string("CREATE TABLE t(x INTEGER PRIMARY KEY ASC, y, z)");
+    QTest::newRow("202") << std::string("CREATE TABLE t(x INTEGER, y, z, PRIMARY KEY(x ASC))");
+    QTest::newRow("203") << std::string("CREATE TABLE t(x INTEGER, y, z, PRIMARY KEY(x DESC))");
+    QTest::newRow("204") << std::string("CREATE TABLE t(x INTEGER PRIMARY KEY DESC, y, z)");
 }

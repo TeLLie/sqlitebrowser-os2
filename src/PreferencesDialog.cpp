@@ -14,6 +14,7 @@
 #include <QKeyEvent>
 #include <QStandardPaths>
 #include <QStyledItemDelegate>
+#include <QSysInfo>
 
 PreferencesDialog::PreferencesDialog(QWidget* parent, Tabs tab)
     : QDialog(parent),
@@ -31,6 +32,8 @@ PreferencesDialog::PreferencesDialog(QWidget* parent, Tabs tab)
     ui->fr_reg_fg->installEventFilter(this);
     ui->fr_null_bg->installEventFilter(this);
     ui->fr_null_fg->installEventFilter(this);
+    ui->fr_formatted_bg->installEventFilter(this);
+    ui->fr_formatted_fg->installEventFilter(this);
 
     connect(ui->comboDataBrowserFont, static_cast<void (QFontComboBox::*)(int)>(&QFontComboBox::currentIndexChanged), this, &PreferencesDialog::updatePreviewFont);
     connect(ui->spinDataBrowserFontSize, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, &PreferencesDialog::updatePreviewFont);
@@ -39,6 +42,8 @@ PreferencesDialog::PreferencesDialog(QWidget* parent, Tabs tab)
     ui->labelUpdates->setVisible(false);
     ui->checkUpdates->setVisible(false);
 #endif
+
+    createBuiltinExtensionList();
 
     loadSettings();
 
@@ -49,6 +54,10 @@ PreferencesDialog::PreferencesDialog(QWidget* parent, Tabs tab)
 
     // Set current tab
     ui->tabWidget->setCurrentIndex(tab);
+
+    // Connect 'Export Settings' and 'Import Settings' buttons
+    connect(ui->buttonExportSettings, &QPushButton::clicked, this, &PreferencesDialog::exportSettings);
+    connect(ui->buttonImportSettings, &QPushButton::clicked, this, &PreferencesDialog::importSettings);
 }
 
 /*
@@ -76,6 +85,7 @@ void PreferencesDialog::loadSettings()
     ui->encodingComboBox->setCurrentIndex(ui->encodingComboBox->findText(Settings::getValue("db", "defaultencoding").toString(), Qt::MatchFixedString));
     ui->comboDefaultLocation->setCurrentIndex(Settings::getValue("db", "savedefaultlocation").toInt());
     ui->locationEdit->setText(QDir::toNativeSeparators(Settings::getValue("db", "defaultlocation").toString()));
+    ui->checkPromptSQLTabsInNewProject->setChecked(Settings::getValue("General", "promptsqltabsinnewproject").toBool());
     ui->checkUpdates->setChecked(Settings::getValue("checkversion", "enabled").toBool());
 
     ui->checkHideSchemaLinebreaks->setChecked(Settings::getValue("db", "hideschemalinebreaks").toBool());
@@ -106,6 +116,8 @@ void PreferencesDialog::loadSettings()
     loadColorSetting(ui->fr_bin_bg, "bin_bg");
     loadColorSetting(ui->fr_reg_fg, "reg_fg");
     loadColorSetting(ui->fr_reg_bg, "reg_bg");
+    loadColorSetting(ui->fr_formatted_fg, "formatted_fg");
+    loadColorSetting(ui->fr_formatted_bg, "formatted_bg");
 
     ui->spinSymbolLimit->setValue(Settings::getValue("databrowser", "symbol_limit").toInt());
     ui->spinCompleteThreshold->setValue(Settings::getValue("databrowser", "complete_threshold").toInt());
@@ -115,15 +127,21 @@ void PreferencesDialog::loadSettings()
     ui->editFilterEscape->setText(Settings::getValue("databrowser", "filter_escape").toString());
     ui->spinFilterDelay->setValue(Settings::getValue("databrowser", "filter_delay").toInt());
 
+    ui->treeSyntaxHighlighting->resizeColumnToContents(1);
+
     for(int i=0; i < ui->treeSyntaxHighlighting->topLevelItemCount(); ++i)
     {
         std::string name = ui->treeSyntaxHighlighting->topLevelItem(i)->text(0).toStdString();
         QString colorname = Settings::getValue("syntaxhighlighter", name + "_colour").toString();
         QColor color = QColor(colorname);
-        ui->treeSyntaxHighlighting->topLevelItem(i)->setTextColor(2, color);
-        ui->treeSyntaxHighlighting->topLevelItem(i)->setBackgroundColor(2, color);
+        ui->treeSyntaxHighlighting->topLevelItem(i)->setForeground(2, color);
+        ui->treeSyntaxHighlighting->topLevelItem(i)->setBackground(2, color);
         ui->treeSyntaxHighlighting->topLevelItem(i)->setText(2, colorname);
-        if (name != "null" && name != "currentline"  && name != "background" && name != "foreground") {
+
+        // Add font properties except for colour-only entries
+        if (name != "null" && name != "currentline" &&
+            name != "background" && name != "foreground" && name != "highlight" &&
+            name != "selected_fg" && name != "selected_bg") {
             ui->treeSyntaxHighlighting->topLevelItem(i)->setCheckState(3, Settings::getValue("syntaxhighlighter", name + "_bold").toBool() ? Qt::Checked : Qt::Unchecked);
             ui->treeSyntaxHighlighting->topLevelItem(i)->setCheckState(4, Settings::getValue("syntaxhighlighter", name + "_italic").toBool() ? Qt::Checked : Qt::Unchecked);
             ui->treeSyntaxHighlighting->topLevelItem(i)->setCheckState(5, Settings::getValue("syntaxhighlighter", name + "_underline").toBool() ? Qt::Checked : Qt::Unchecked);
@@ -161,10 +179,10 @@ void PreferencesDialog::loadSettings()
         }
     }
     {
-        QStringList client_certs = Settings::getValue("remote", "client_certificates").toStringList();
+        const QStringList client_certs = Settings::getValue("remote", "client_certificates").toStringList();
         for(const QString& file : client_certs)
         {
-            auto certs = QSslCertificate::fromPath(file);
+            const auto certs = QSslCertificate::fromPath(file);
             for(const QSslCertificate& cert : certs)
                 addClientCertToTable(file, cert);
         }
@@ -179,6 +197,7 @@ void PreferencesDialog::loadSettings()
 
     ui->spinEditorFontSize->setValue(Settings::getValue("editor", "fontsize").toInt());
     ui->spinTabSize->setValue(Settings::getValue("editor", "tabsize").toInt());
+    ui->checkIndentationUseTabs->setChecked(Settings::getValue("editor", "indentation_use_tabs").toBool());
     ui->spinLogFontSize->setValue(Settings::getValue("log", "fontsize").toInt());
     ui->wrapComboBox->setCurrentIndex(Settings::getValue("editor", "wrap_lines").toInt());
     ui->quoteComboBox->setCurrentIndex(Settings::getValue("editor", "identifier_quotes").toInt());
@@ -190,6 +209,11 @@ void PreferencesDialog::loadSettings()
     ui->checkCloseButtonOnTabs->setChecked(Settings::getValue("editor", "close_button_on_tabs").toBool());
 
     ui->listExtensions->addItems(Settings::getValue("extensions", "list").toStringList());
+    for (int i=0;i<ui->listBuiltinExtensions->count();++i)
+    {
+        QListWidgetItem* item = ui->listBuiltinExtensions->item(i);
+        item->setCheckState(Settings::getValue("extensions", "builtin").toMap().value(item->text()).toBool() ? Qt::Checked : Qt::Unchecked);
+    }
     ui->checkRegexDisabled->setChecked(Settings::getValue("extensions", "disableregex").toBool());
     ui->checkAllowLoadExtension->setChecked(Settings::getValue("extensions", "enable_load_extension").toBool());
     fillLanguageBox();
@@ -200,9 +224,10 @@ void PreferencesDialog::loadSettings()
     ui->toolbarStyleComboSql->setCurrentIndex(Settings::getValue("General", "toolbarStyleSql").toInt());
     ui->toolbarStyleComboEditCell->setCurrentIndex(Settings::getValue("General", "toolbarStyleEditCell").toInt());
     ui->spinGeneralFontSize->setValue(Settings::getValue("General", "fontsize").toInt());
+    ui->spinMaxRecentFiles->setValue(Settings::getValue("General", "maxRecentFiles").toInt());
 }
 
-void PreferencesDialog::saveSettings()
+void PreferencesDialog::saveSettings(bool accept)
 {
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
@@ -225,6 +250,8 @@ void PreferencesDialog::saveSettings()
     saveColorSetting(ui->fr_null_bg, "null_bg");
     saveColorSetting(ui->fr_reg_fg, "reg_fg");
     saveColorSetting(ui->fr_reg_bg, "reg_bg");
+    saveColorSetting(ui->fr_formatted_fg, "formatted_fg");
+    saveColorSetting(ui->fr_formatted_bg, "formatted_bg");
     saveColorSetting(ui->fr_bin_fg, "bin_fg");
     saveColorSetting(ui->fr_bin_bg, "bin_bg");
     Settings::setValue("databrowser", "symbol_limit", ui->spinSymbolLimit->value());
@@ -245,6 +272,7 @@ void PreferencesDialog::saveSettings()
     Settings::setValue("editor", "font", ui->comboEditorFont->currentText());
     Settings::setValue("editor", "fontsize", ui->spinEditorFontSize->value());
     Settings::setValue("editor", "tabsize", ui->spinTabSize->value());
+    Settings::setValue("editor", "indentation_use_tabs", ui->checkIndentationUseTabs->isChecked());
     Settings::setValue("log", "fontsize", ui->spinLogFontSize->value());
     Settings::setValue("editor", "wrap_lines", ui->wrapComboBox->currentIndex());
     Settings::setValue("editor", "identifier_quotes", ui->quoteComboBox->currentIndex());
@@ -260,6 +288,11 @@ void PreferencesDialog::saveSettings()
     Settings::setValue("extensions", "list", extList);
     Settings::setValue("extensions", "disableregex", ui->checkRegexDisabled->isChecked());
     Settings::setValue("extensions", "enable_load_extension", ui->checkAllowLoadExtension->isChecked());
+
+    QVariantMap builtinExtList;
+    for (int i=0;i<ui->listBuiltinExtensions->count();++i)
+        builtinExtList.insert(ui->listBuiltinExtensions->item(i)->text(), ui->listBuiltinExtensions->item(i)->checkState());
+    Settings::setValue("extensions", "builtin", QVariant::fromValue(builtinExtList));
 
     // Save remote settings
     Settings::setValue("remote", "active", ui->checkUseRemotes->isChecked());
@@ -308,7 +341,7 @@ void PreferencesDialog::saveSettings()
             new_client_certs.push_back(copy_to);
         }
     }
-    for(const QString& file : old_client_certs)
+    for(const QString& file : qAsConst(old_client_certs))
     {
         // Now only the deleted client certs are still in the old list. Delete the cert files associated with them.
         QFile::remove(file);
@@ -331,24 +364,28 @@ void PreferencesDialog::saveSettings()
     Settings::setValue("General", "toolbarStyleEditCell", ui->toolbarStyleComboEditCell->currentIndex());
     Settings::setValue("General", "DBFileExtensions", m_dbFileExtensions.join(";;") );
     Settings::setValue("General", "fontsize", ui->spinGeneralFontSize->value());
+    Settings::setValue("General", "maxRecentFiles", ui->spinMaxRecentFiles->value());
+    Settings::setValue("General", "promptsqltabsinnewproject", ui->checkPromptSQLTabsInNewProject->isChecked());
 
     m_proxyDialog->saveSettings();
 
-    accept();
+    if(accept)
+        PreferencesDialog::accept();
 
     QApplication::restoreOverrideCursor();
 }
 
 void PreferencesDialog::showColourDialog(QTreeWidgetItem* item, int column)
 {
-    if(item->text(column).left(1) != "#")
+    QString text = item->text(column);
+    if(!text.size() || text.at(0) != '#')
         return;
 
-    QColor colour = QColorDialog::getColor(QColor(item->text(column)), this);
+    QColor colour = QColorDialog::getColor(text, this);
     if(colour.isValid())
     {
-        item->setTextColor(column, colour);
-        item->setBackgroundColor(column, colour);
+        item->setForeground(column, colour);
+        item->setBackground(column, colour);
         item->setText(column, colour.name());
     }
 }
@@ -358,6 +395,7 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *event)
     // Use mouse click and enter press on the frames to pop up a colour dialog
     if (obj == ui->fr_bin_bg  || obj == ui->fr_bin_fg ||
         obj == ui->fr_reg_bg  || obj == ui->fr_reg_fg ||
+        obj == ui->fr_formatted_bg || obj == ui->fr_formatted_fg ||
         obj == ui->fr_null_bg || obj == ui->fr_null_fg)
     {
         if (event->type() == QEvent::KeyPress)
@@ -409,6 +447,62 @@ void PreferencesDialog::removeExtension()
         ui->listExtensions->takeItem(ui->listExtensions->currentIndex().row());
 }
 
+void PreferencesDialog::createBuiltinExtensionList()
+{
+    QDir dir;
+    QStringList files;
+
+    // If we upgrade Qt framework version to 6.x at some point, use 'macos' instead of 'osx.'
+    // For further information, see the https://doc.qt.io/qt-6/qsysinfo.html
+    if (QSysInfo::productType() == "osx") {
+        dir.setPath(qApp->applicationDirPath() + "/../Extensions/");
+        files = dir.entryList(QStringList() << "*.dylib", QDir::Files);
+    }
+    else if (QSysInfo::productType() == "windows") {
+        dir.setPath(qApp->applicationDirPath() + "/extensions/");
+        files = dir.entryList(QStringList() << "*.dll", QDir::Files);
+    }
+    else {
+        const QString productType (QSysInfo::productType());
+        const QString cpuArchitecture (QSysInfo::currentCpuArchitecture());
+        if (productType == "fedora" || productType == "redhat") {
+            if (cpuArchitecture.contains("64"))
+                dir.setPath("/usr/lib64/");
+            else
+                dir.setPath("/usr/lib/");
+        } else {
+            if (cpuArchitecture == "arm") {
+                dir.setPath("/usr/lib/aarch-linux-gnu/");
+            } else if (cpuArchitecture == "arm64") {
+                dir.setPath("/usr/lib/aarch64-linux-gnu/");
+            } else if (cpuArchitecture == "i386") {
+                dir.setPath("/usr/lib/i386-linux-gnu/");
+            } else if (cpuArchitecture == "x86_64") {
+                dir.setPath("/usr/lib/x86_64-linux-gnu/");
+            } else {
+                dir.setPath("/usr/lib/");
+            }
+        }
+        // There is no single naming convention for SQLite extension libraries,
+        // but this gives good results, at least on Debian based systems.
+        // The patterns have to exclude "libsqlite3.so", which is the SQLite3
+        // library, not an extension.
+        files = dir.entryList(QStringList()
+                              << "libsqlite3[!.]*.so"
+                              << "mod_*.so"
+                              << "lib?*sqlite*.so", QDir::Files);
+    }
+    
+    for (const QString& file: files) {
+        QString absoluteFilePath = dir.absoluteFilePath(file);
+        QListWidgetItem* item = new QListWidgetItem(absoluteFilePath, ui->listBuiltinExtensions);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        // The check state is redetermined after the 'loadSettings()' function call.
+        item->setCheckState(Qt::Unchecked);
+        ui->listBuiltinExtensions->addItem(item);
+    }
+}
+
 void PreferencesDialog::fillLanguageBox()
 {
     QDir translationsDir(QCoreApplication::applicationDirPath() + "/translations",
@@ -433,7 +527,7 @@ void PreferencesDialog::fillLanguageBox()
     // Get available *.qm files from translation dir near executable as well as from resources
     QFileInfoList file_infos = translationsDir.entryInfoList();
     file_infos += QDir(":/translations").entryInfoList();
-    for(const QFileInfo& file : file_infos)
+    for(const QFileInfo& file : qAsConst(file_infos))
     {
         QLocale locale(file.baseName().remove("sqlb_"));
 
@@ -503,6 +597,12 @@ void PreferencesDialog::setColorSetting(QFrame *frame, const QColor &color)
     } else if (frame ==  ui->fr_reg_fg) {
         line = ui->txtRegular;
         role = line->foregroundRole();
+    } else if (frame ==  ui->fr_formatted_bg) {
+        line = ui->txtFormatted;
+        role = line->backgroundRole();
+    } else if (frame ==  ui->fr_formatted_fg) {
+        line = ui->txtFormatted;
+        role = line->foregroundRole();
     } else if (frame ==  ui->fr_null_bg) {
         line = ui->txtNull;
         role = line->backgroundRole();
@@ -541,13 +641,15 @@ void PreferencesDialog::adjustColorsToStyle(int style)
     setColorSetting(ui->fr_bin_bg, Settings::getDefaultColorValue("databrowser", "bin_bg_colour", appStyle));
     setColorSetting(ui->fr_reg_fg, Settings::getDefaultColorValue("databrowser", "reg_fg_colour", appStyle));
     setColorSetting(ui->fr_reg_bg, Settings::getDefaultColorValue("databrowser", "reg_bg_colour", appStyle));
+    setColorSetting(ui->fr_formatted_fg, Settings::getDefaultColorValue("databrowser", "formatted_fg_colour", appStyle));
+    setColorSetting(ui->fr_formatted_bg, Settings::getDefaultColorValue("databrowser", "formatted_bg_colour", appStyle));
 
     for(int i=0; i < ui->treeSyntaxHighlighting->topLevelItemCount(); ++i)
     {
         std::string name = ui->treeSyntaxHighlighting->topLevelItem(i)->text(0).toStdString();
         QColor color = Settings::getDefaultColorValue("syntaxhighlighter", name + "_colour", appStyle);
-        ui->treeSyntaxHighlighting->topLevelItem(i)->setTextColor(2, color);
-        ui->treeSyntaxHighlighting->topLevelItem(i)->setBackgroundColor(2, color);
+        ui->treeSyntaxHighlighting->topLevelItem(i)->setForeground(2, color);
+        ui->treeSyntaxHighlighting->topLevelItem(i)->setBackground(2, color);
         ui->treeSyntaxHighlighting->topLevelItem(i)->setText(2, color.name());
     }
 }
@@ -648,13 +750,14 @@ void PreferencesDialog::updatePreviewFont()
         QFont textFont(ui->comboDataBrowserFont->currentText());
         textFont.setPointSize(ui->spinDataBrowserFontSize->value());
         ui->txtRegular->setFont(textFont);
+        ui->txtFormatted->setFont(textFont);
         textFont.setItalic(true);
         ui->txtNull->setFont(textFont);
         ui->txtBlob->setFont(textFont);
     }
 }
 
-void PreferencesDialog::on_buttonManageFileExtension_clicked()
+void PreferencesDialog::showFileExtensionManager()
 {
     FileExtensionManager *manager = new FileExtensionManager(m_dbFileExtensions, this);
 
@@ -664,7 +767,7 @@ void PreferencesDialog::on_buttonManageFileExtension_clicked()
     }
 }
 
-void PreferencesDialog::on_buttonBox_clicked(QAbstractButton* button)
+void PreferencesDialog::buttonBoxClicked(QAbstractButton* button)
 {
     if (button == ui->buttonBox->button(QDialogButtonBox::Cancel))
         reject();
@@ -683,4 +786,37 @@ void PreferencesDialog::on_buttonBox_clicked(QAbstractButton* button)
 void PreferencesDialog::configureProxy()
 {
     m_proxyDialog->show();
+}
+
+void PreferencesDialog::exportSettings()
+{
+    saveSettings(false);
+
+    const QString fileName = FileDialog::getSaveFileName(CreateSettingsFile, this, tr("Save Settings File"), tr("Initialization File (*.ini)"));
+    if(!fileName.isEmpty())
+    {
+        Settings::exportSettings(fileName);
+        QMessageBox::information(this, QApplication::applicationName(), (tr("The settings file has been saved in location :\n") + fileName));
+    }
+}
+
+void PreferencesDialog::importSettings()
+{
+    const QString fileName = FileDialog::getOpenFileName(OpenSettingsFile, this, tr("Open Settings File"), tr("Initialization File (*.ini)"));
+    const QVariant existingLanguage = Settings::getValue("General", "language");
+
+    if(!fileName.isEmpty())
+    {
+        if(Settings::importSettings(fileName))
+        {
+            QMessageBox::information(this, QApplication::applicationName(), tr("The settings file was loaded properly."));
+            if (existingLanguage != Settings::getValue("General", "language"))
+                QMessageBox::information(this, QApplication::applicationName(),
+                                         tr("The language will change after you restart the application."));
+
+            accept();
+        } else {
+            QMessageBox::critical(this, QApplication::applicationName(), tr("The selected settings file is not a normal settings file.\nPlease check again."));
+        }
+    }
 }

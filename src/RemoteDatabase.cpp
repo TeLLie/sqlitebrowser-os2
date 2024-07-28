@@ -67,7 +67,7 @@ void RemoteDatabase::localAssureOpened()
                                 "\"commit_id\" TEXT NOT NULL,"
                                 "\"file\" TEXT NOT NULL UNIQUE,"
                                 "\"modified\" INTEGER DEFAULT 0,"
-                                "\"branch\" TEXT NOT NULL DEFAULT \"master\""
+                                "\"branch\" TEXT NOT NULL DEFAULT \"main\""
                                 ")");
     if(sqlite3_exec(m_dbLocal, statement.toUtf8(), nullptr, nullptr, &errmsg) != SQLITE_OK)
     {
@@ -412,7 +412,11 @@ void RemoteDatabase::localDeleteFile(QString filename)
         sqlite3_finalize(stmt);
         return;
     }
-    sqlite3_step(stmt);
+    if(sqlite3_step(stmt) != SQLITE_DONE)
+    {
+        sqlite3_finalize(stmt);
+        return;
+    }
     sqlite3_finalize(stmt);
 
     // Delete the actual file on disk

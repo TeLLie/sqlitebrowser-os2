@@ -74,6 +74,7 @@
        <property name="toolButtonStyle">
         <enum>Qt::ToolButtonIconOnly</enum>
        </property>
+       <addaction name="actionAddDock"/>
        <addaction name="actionRefresh"/>
        <addaction name="actionClearFilters"/>
        <addaction name="actionClearSorting"/>
@@ -192,7 +193,7 @@
       <enum>Qt::CopyAction</enum>
      </property>
      <property name="selectionMode">
-      <enum>QAbstractItemView::ContiguousSelection</enum>
+      <enum>QAbstractItemView::ExtendedSelection</enum>
      </property>
     </widget>
    </item>
@@ -449,9 +450,6 @@
      </property>
      <item>
       <widget class="QToolButton" name="buttonBegin">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
        <property name="toolTip">
         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Scroll to the beginning&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
        </property>
@@ -463,15 +461,12 @@
        </property>
        <property name="icon">
         <iconset resource="icons/icons.qrc">
-         <normaloff>:/icons/resultset_first.png</normaloff>:/icons/resultset_first.png</iconset>
+         <normaloff>:/icons/resultset_first</normaloff>:/icons/resultset_first</iconset>
        </property>
       </widget>
      </item>
      <item>
       <widget class="QToolButton" name="buttonPrevious">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
        <property name="toolTip">
         <string>Scroll one page upwards</string>
        </property>
@@ -483,7 +478,7 @@
        </property>
        <property name="icon">
         <iconset resource="icons/icons.qrc">
-         <normaloff>:/icons/resultset_previous.png</normaloff>:/icons/resultset_previous.png</iconset>
+         <normaloff>:/icons/resultset_previous</normaloff>:/icons/resultset_previous</iconset>
        </property>
       </widget>
      </item>
@@ -496,9 +491,6 @@
      </item>
      <item>
       <widget class="QToolButton" name="buttonNext">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
        <property name="toolTip">
         <string>Scroll one page downwards</string>
        </property>
@@ -516,9 +508,6 @@
      </item>
      <item>
       <widget class="QToolButton" name="buttonEnd">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
        <property name="toolTip">
         <string>Scroll to the end</string>
        </property>
@@ -621,7 +610,7 @@
     <string>Insert a new record in the current table</string>
    </property>
    <property name="whatsThis">
-    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This button creates a new record in the database. Hold the mouse button to open a pop-up menu of different options:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;New Record&lt;/span&gt;: insert a new record with default values in the database.&lt;/li&gt;&lt;li&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Insert Values...&lt;/span&gt;: open a dialog for entering values before they are inserted in the database. This allows to enter values acomplishing the different constraints. This dialog is also open if the &lt;span style=&quot; font-weight:600;&quot;&gt;New Record&lt;/span&gt; option fails due to these constraints.&lt;/li&gt;&lt;/ul&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This button creates a new record in the database. Hold the mouse button to open a pop-up menu of different options:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;New Record&lt;/span&gt;: insert a new record with default values in the database.&lt;/li&gt;&lt;li&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Insert Values...&lt;/span&gt;: open a dialog for entering values before they are inserted in the database. This allows to enter values accomplishing the different constraints. This dialog is also open if the &lt;span style=&quot; font-weight:600;&quot;&gt;New Record&lt;/span&gt; option fails due to these constraints.&lt;/li&gt;&lt;/ul&gt;&lt;/body&gt;&lt;/html&gt;</string>
    </property>
   </action>
   <action name="actionDeleteRecord">
@@ -682,6 +671,20 @@
     <string>This button exports the data of the browsed table as currently displayed (after filters, display formats and order column) as a CSV file.</string>
    </property>
   </action>
+  <action name="actionFilteredTableExportJson">
+   <property name="text">
+    <string>Export to &amp;JSON</string>
+   </property>
+   <property name="toolTip">
+    <string>Export the filtered data to JSON</string>
+   </property>
+   <property name="statusTip">
+    <string>Export the filtered data to JSON</string>
+   </property>
+   <property name="whatsThis">
+    <string>This button exports the data of the browsed table as currently displayed (after filters, display formats and order column) as a JSON file.</string>
+   </property>
+  </action>
   <action name="actionFilterSaveAsView">
    <property name="text">
     <string>Save as &amp;view</string>
@@ -711,7 +714,7 @@
     <string>Save the table as currently displayed</string>
    </property>
    <property name="whatsThis">
-    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This popup menu provides the following options applying to the currently browsed and filtered table:&lt;/p&gt;&lt;ul style=&quot;margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;&quot;&gt;&lt;li style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Export to CSV: this option exports the data of the browsed table as currently displayed (after filters, display formats and order column) to a CSV file.&lt;/li&gt;&lt;li style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Save as view: this option saves the current setting of the browsed table (filters, display formats and order column) as an SQL view that you can later browse or use in SQL statements.&lt;/li&gt;&lt;/ul&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This pop-up menu provides the following options applying to the currently browsed and filtered table:&lt;/p&gt;&lt;ul style=&quot;margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;&quot;&gt;&lt;li style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Export to CSV: this option exports the data of the browsed table as currently displayed (after filters, display formats and order column) to a CSV file.&lt;/li&gt;&lt;li style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Save as view: this option saves the current setting of the browsed table (filters, display formats and order column) as an SQL view that you can later browse or use in SQL statements.&lt;/li&gt;&lt;/ul&gt;&lt;/body&gt;&lt;/html&gt;</string>
    </property>
   </action>
   <action name="actionHideColumns">
@@ -744,6 +747,14 @@
    </property>
    <property name="toolTip">
     <string>Change the default encoding assumed for all tables in the database</string>
+   </property>
+  </action>
+  <action name="actionCopyColumnName">
+   <property name="text">
+    <string>Copy column name</string>
+   </property>
+   <property name="toolTip">
+    <string>Copy the database table column name to your clipboard</string>
    </property>
   </action>
   <action name="actionClearFilters">
@@ -806,6 +817,24 @@
     <enum>Qt::WidgetShortcut</enum>
    </property>
   </action>
+  <action name="actionAddDock">
+   <property name="icon">
+    <iconset resource="icons/icons.qrc">
+     <normaloff>:/icons/new_tab</normaloff>:/icons/new_tab</iconset>
+   </property>
+   <property name="text">
+    <string>New Data Browser</string>
+   </property>
+   <property name="toolTip">
+    <string>Add a new docked Data Browser</string>
+   </property>
+   <property name="statusTip">
+    <string>Add a new docked Data Browser</string>
+   </property>
+   <property name="whatsThis">
+    <string>This button adds a new docked Data Browser, which you can detach and arrange in different layouts.</string>
+   </property>
+  </action>
   <action name="actionRefresh">
    <property name="icon">
     <iconset resource="icons/icons.qrc">
@@ -848,7 +877,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_bold.png</normaloff>:/icons/text_bold.png</iconset>
+     <normaloff>:/icons/text_bold</normaloff>:/icons/text_bold</iconset>
    </property>
    <property name="text">
     <string>Bold</string>
@@ -866,7 +895,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_italic.png</normaloff>:/icons/text_italic.png</iconset>
+     <normaloff>:/icons/text_italic</normaloff>:/icons/text_italic</iconset>
    </property>
    <property name="text">
     <string>Italic</string>
@@ -881,7 +910,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_underline.png</normaloff>:/icons/text_underline.png</iconset>
+     <normaloff>:/icons/text_underline</normaloff>:/icons/text_underline</iconset>
    </property>
    <property name="text">
     <string>Underline</string>
@@ -899,7 +928,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_align_right.png</normaloff>:/icons/text_align_right.png</iconset>
+     <normaloff>:/icons/text_align_right</normaloff>:/icons/text_align_right</iconset>
    </property>
    <property name="text">
     <string>Align Right</string>
@@ -914,7 +943,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_align_left.png</normaloff>:/icons/text_align_left.png</iconset>
+     <normaloff>:/icons/text_align_left</normaloff>:/icons/text_align_left</iconset>
    </property>
    <property name="text">
     <string>Align Left</string>
@@ -929,7 +958,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_align_center.png</normaloff>:/icons/text_align_center.png</iconset>
+     <normaloff>:/icons/text_align_center</normaloff>:/icons/text_align_center</iconset>
    </property>
    <property name="text">
     <string>Center Horizontally</string>
@@ -944,7 +973,7 @@
    </property>
    <property name="icon">
     <iconset resource="icons/icons.qrc">
-     <normaloff>:/icons/text_align_justify.png</normaloff>:/icons/text_align_justify.png</iconset>
+     <normaloff>:/icons/text_align_justify</normaloff>:/icons/text_align_justify</iconset>
    </property>
    <property name="text">
     <string>Justify</string>
@@ -1054,6 +1083,17 @@
     <string>Replace text in cells</string>
    </property>
   </action>
+  <action name="actionFreezeColumns">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Freeze columns</string>
+   </property>
+   <property name="toolTip">
+    <string>Make all columns from the first column up to this column not move when scrolling horizontally</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>
@@ -1061,7 +1101,6 @@
    <extends>QTableWidget</extends>
    <header>ExtendedTableWidget.h</header>
    <slots>
-    <signal>foreignKeyClicked(QString,QString,QByteArray)</signal>
     <signal>foreignKeyClicked(sqlb::ObjectIdentifier,QString,QByteArray)</signal>
    </slots>
   </customwidget>
@@ -1102,7 +1141,7 @@
    <sender>comboBrowseTable</sender>
    <signal>activated(QString)</signal>
    <receiver>TableBrowser</receiver>
-   <slot>updateTable()</slot>
+   <slot>refresh()</slot>
    <hints>
     <hint type="sourcelabel">
      <x>159</x>
@@ -1206,22 +1245,6 @@
     </hint>
     <hint type="destinationlabel">
      <x>499</x>
-     <y>314</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>dataTable</sender>
-   <signal>foreignKeyClicked(sqlb::ObjectIdentifier,std::string,QByteArray)</signal>
-   <receiver>TableBrowser</receiver>
-   <slot>jumpToRow(sqlb::ObjectIdentifier,std::string,QByteArray)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>70</x>
-     <y>242</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>518</x>
      <y>314</y>
     </hint>
    </hints>
@@ -1342,7 +1365,23 @@
    <sender>actionFilteredTableExportCsv</sender>
    <signal>triggered()</signal>
    <receiver>TableBrowser</receiver>
-   <slot>exportFilteredTable()</slot>
+   <slot>exportCsvFilteredTable()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>518</x>
+     <y>314</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionFilteredTableExportJson</sender>
+   <signal>triggered()</signal>
+   <receiver>TableBrowser</receiver>
+   <slot>exportJsonFilteredTable()</slot>
    <hints>
     <hint type="sourcelabel">
      <x>-1</x>
@@ -1387,6 +1426,22 @@
    </hints>
   </connection>
   <connection>
+   <sender>actionCopyColumnName</sender>
+   <signal>triggered()</signal>
+   <receiver>TableBrowser</receiver>
+   <slot>copyColumnName()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>518</x>
+     <y>314</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
    <sender>actionSetAllTablesEncoding</sender>
    <signal>triggered()</signal>
    <receiver>TableBrowser</receiver>
@@ -1419,22 +1474,6 @@
    </hints>
   </connection>
   <connection>
-   <sender>actionRefresh</sender>
-   <signal>triggered()</signal>
-   <receiver>TableBrowser</receiver>
-   <slot>updateTable()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>-1</x>
-     <y>-1</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>518</x>
-     <y>314</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
    <sender>actionPrintTable</sender>
    <signal>triggered()</signal>
    <receiver>dataTable</receiver>
@@ -1450,26 +1489,77 @@
     </hint>
    </hints>
   </connection>
+  <connection>
+   <sender>actionClearFilters</sender>
+   <signal>triggered()</signal>
+   <receiver>TableBrowser</receiver>
+   <slot>clearFilters()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionClearSorting</sender>
+   <signal>triggered()</signal>
+   <receiver>TableBrowser</receiver>
+   <slot>clearSorting()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShowAllColumns</sender>
+   <signal>triggered()</signal>
+   <receiver>TableBrowser</receiver>
+   <slot>showAllColumns()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+   </hints>
+  </connection>
  </connections>
  <slots>
-  <slot>updateTable()</slot>
+  <slot>refresh()</slot>
   <slot>selectionChanged(QModelIndex)</slot>
   <slot>navigatePrevious()</slot>
   <slot>navigateNext()</slot>
   <slot>navigateBegin()</slot>
   <slot>navigateEnd()</slot>
   <slot>navigateGoto()</slot>
-  <slot>jumpToRow(sqlb::ObjectIdentifier,std::string,QByteArray)</slot>
   <slot>showRowidColumn(bool)</slot>
   <slot>unlockViewEditing(bool)</slot>
   <slot>editDisplayFormat()</slot>
   <slot>addRecord()</slot>
   <slot>deleteRecord()</slot>
   <slot>insertValues()</slot>
-  <slot>exportFilteredTable</slot>
+  <slot>exportCsvFilteredTable</slot>
+  <slot>exportJsonFilteredTable</slot>
   <slot>saveFilterAsView</slot>
   <slot>setDefaultTableEncoding()</slot>
   <slot>hideColumns()</slot>
   <slot>setTableEncoding()</slot>
+  <slot>clearFilters()</slot>
+  <slot>clearSorting()</slot>
+  <slot>showAllColumns()</slot>
  </slots>
 </ui>

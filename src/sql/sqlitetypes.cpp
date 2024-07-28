@@ -23,6 +23,13 @@ std::string joinStringVector(const StringVector& vec, const std::string& delim)
     });
 }
 
+std::string joinStringVector(const IndexedColumnVector& vec, const std::string& delim)
+{
+    return std::accumulate(vec.begin(), vec.end(), std::string(), [delim](const std::string& so_far, const IndexedColumn& c) {
+        return so_far.empty() ? c.toString("", " ") : so_far + delim + c.toString("", "");
+    });
+}
+
 bool Object::operator==(const Object& rhs) const
 {
     if(m_name != rhs.m_name)
@@ -35,58 +42,8 @@ bool Object::operator==(const Object& rhs) const
     return true;
 }
 
-std::string Object::typeToString(Types type)
-{
-    switch(type)
-    {
-    case Types::Table: return "table";
-    case Types::Index: return "index";
-    case Types::View: return "view";
-    case Types::Trigger: return "trigger";
-    }
-    return std::string();
-}
-
-ConstraintPtr Constraint::makeConstraint(ConstraintTypes type)
-{
-    switch(type)
-    {
-    case PrimaryKeyConstraintType:
-        return std::make_shared<PrimaryKeyConstraint>();
-    case UniqueConstraintType:
-        return std::make_shared<UniqueConstraint>();
-    case ForeignKeyConstraintType:
-        return std::make_shared<ForeignKeyClause>();
-    case CheckConstraintType:
-        return std::make_shared<CheckConstraint>();
-    default:
-        return nullptr;
-    }
-}
-
-void Constraint::replaceInColumnList(const std::string& from, const std::string& to)
-{
-    std::replace(column_list.begin(), column_list.end(), from, to);
-}
-
-void Constraint::removeFromColumnList(const std::string& key)
-{
-    column_list.erase(std::remove(column_list.begin(), column_list.end(), key), column_list.end());
-}
-
-bool ForeignKeyClause::isSet() const
-{
-    return m_override.size() || m_table.size();
-}
-
 std::string ForeignKeyClause::toString() const
 {
-    if(!isSet())
-        return std::string();
-
-    if(m_override.size())
-        return m_override;
-
     std::string result = escapeIdentifier(m_table);
 
     if(m_columns.size())
@@ -98,86 +55,26 @@ std::string ForeignKeyClause::toString() const
     return result;
 }
 
-void ForeignKeyClause::setFromString(const std::string& fk)
-{
-    m_override = fk;
-}
-
-std::string ForeignKeyClause::toSql() const
+std::string ForeignKeyClause::toSql(const StringVector& columns) const
 {
     std::string result;
     if(!m_name.empty())
         result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
-    result += "FOREIGN KEY(" + joinStringVector(escapeIdentifier(column_list), ",") + ") REFERENCES " + this->toString();
+    result += "FOREIGN KEY(" + joinStringVector(escapeIdentifier(columns), ",") + ") REFERENCES " + this->toString();
 
     return result;
 }
 
-UniqueConstraint::UniqueConstraint(const IndexedColumnVector& columns) :
-    m_columns(columns)
-{
-    // Extract column names and give them to the column list in the base class
-    for(const auto& c : columns)
-        column_list.push_back(c.name());
-}
-
-UniqueConstraint::UniqueConstraint(const StringVector& columns) :
-    Constraint(columns)
-{
-    setColumnList(columns);
-}
-
-void UniqueConstraint::setColumnList(const StringVector& list)
-{
-    Constraint::setColumnList(list);
-
-    // Create our own column list without sort orders etc
-    m_columns.clear();
-    for(const auto& c : list)
-        m_columns.push_back(IndexedColumn(c, false));
-}
-
-void UniqueConstraint::addToColumnList(const std::string& key)
-{
-    Constraint::addToColumnList(key);
-
-    // Also add to our own column list
-    m_columns.push_back(IndexedColumn(key, false));
-}
-
-void UniqueConstraint::replaceInColumnList(const std::string& from, const std::string& to)
-{
-    Constraint::replaceInColumnList(from, to);
-
-    for(auto& c : m_columns)
-    {
-        if(c.name() == from)
-            c.setName(to);
-    }
-}
-
-void UniqueConstraint::removeFromColumnList(const std::string& key)
-{
-    Constraint::removeFromColumnList(key);
-
-    m_columns.erase(std::remove_if(m_columns.begin(), m_columns.end(), [key](const IndexedColumn& c) {
-        if(c.name() == key)
-            return true;
-        else
-            return false;
-    }), m_columns.end());
-}
-
-std::string UniqueConstraint::toSql() const
+std::string UniqueConstraint::toSql(const IndexedColumnVector& columns) const
 {
     std::string result;
     if(!m_name.empty())
         result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
 
-    std::vector<std::string> u_columns;
-    for(const auto& c : m_columns)
-        u_columns.push_back(c.toString("", " "));
-    result += "UNIQUE(" + joinStringVector(u_columns, ",") + ")";
+    result += "UNIQUE";
+
+    if(columns.size())
+        result += "(" + joinStringVector(columns, ",") + ")";
 
     if(!m_conflictAction.empty())
         result += " ON CONFLICT " + m_conflictAction;
@@ -185,28 +82,27 @@ std::string UniqueConstraint::toSql() const
     return result;
 }
 
-PrimaryKeyConstraint::PrimaryKeyConstraint(const IndexedColumnVector& columns) :
-    UniqueConstraint(columns),
-    m_auto_increment(false)
-{
-}
-
-PrimaryKeyConstraint::PrimaryKeyConstraint(const StringVector& columns) :
-    UniqueConstraint(columns),
-    m_auto_increment(false)
-{
-}
-
-std::string PrimaryKeyConstraint::toSql() const
+std::string NotNullConstraint::toSql() const
 {
     std::string result;
     if(!m_name.empty())
         result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
 
-    std::vector<std::string> pk_columns;
-    for(const auto& c : m_columns)
-        pk_columns.push_back(c.toString("", " "));
-    result += "PRIMARY KEY(" + joinStringVector(pk_columns, ",") + (m_auto_increment ? " AUTOINCREMENT" : "") + ")";
+    result += "NOT NULL";
+
+    if(!m_conflictAction.empty())
+        result += " ON CONFLICT " + m_conflictAction;
+
+    return result;
+}
+
+std::string PrimaryKeyConstraint::toSql(const IndexedColumnVector& columns) const
+{
+    std::string result;
+    if(!m_name.empty())
+        result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
+
+    result += "PRIMARY KEY(" + joinStringVector(columns, ",") + (m_auto_increment ? " AUTOINCREMENT" : "") + ")";
 
     if(!m_conflictAction.empty())
         result += " ON CONFLICT " + m_conflictAction;
@@ -220,6 +116,26 @@ std::string CheckConstraint::toSql() const
     if(!m_name.empty())
         result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
     result += "CHECK(" + m_expression + ")";
+
+    return result;
+}
+
+std::string DefaultConstraint::toSql() const
+{
+    std::string result;
+    if(!m_name.empty())
+        result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
+    result += "DEFAULT " + m_value;
+
+    return result;
+}
+
+std::string CollateConstraint::toSql() const
+{
+    std::string result;
+    if(!m_name.empty())
+        result = "CONSTRAINT " + escapeIdentifier(m_name) + " ";
+    result += "COLLATE " + m_collation;
 
     return result;
 }
@@ -258,17 +174,17 @@ std::string Field::toString(const std::string& indent, const std::string& sep) c
 {
     std::string str = indent + escapeIdentifier(m_name) + sep + m_type;
     if(m_notnull)
-        str += " NOT NULL";
-    if(!m_defaultvalue.empty())
-        str += " DEFAULT " + m_defaultvalue;
-    if(!m_check.empty())
-        str += " CHECK(" + m_check + ")";
+        str += " " + m_notnull->toSql();
+    if(m_defaultvalue)
+        str += " " + m_defaultvalue->toSql();
+    if(m_check)
+        str += " " + m_check->toSql();
     if(m_unique)
-        str += " UNIQUE";
-    if(!m_collation.empty())
-        str += " COLLATE " + m_collation;
-    if(!m_generated.empty())
-        str += " " + m_generated.toSql();
+        str += " " + m_unique->toSql({});
+    if(m_collation)
+        str += " " + m_collation->toSql();
+    if(m_generated)
+        str += " " + m_generated->toSql();
     return str;
 }
 
@@ -350,17 +266,28 @@ Table& Table::operator=(const Table& rhs)
     Object::operator=(rhs);
 
     // Just assign the simple values
-    m_withoutRowid = rhs.m_withoutRowid;
+    m_options = rhs.m_options;
     m_virtual = rhs.m_virtual;
 
     // Clear the fields and the constraints first in order to avoid duplicates and/or old data in the next step
     fields.clear();
-    m_constraints.clear();
+    m_indexConstraints.clear();
+    m_foreignKeys.clear();
+    m_checkConstraints.clear();
 
     // Make copies of the fields and the constraints. This is necessary in order to avoid any unwanted changes to the application's main database
     // schema representation just by modifying a reference to the fields or constraints and thinking it operates on a copy.
     std::copy(rhs.fields.begin(), rhs.fields.end(), std::back_inserter(fields));
-    m_constraints = rhs.m_constraints;
+    for(const auto& e : rhs.m_indexConstraints)
+    {
+        if(e.second->isPrimaryKey())
+            m_indexConstraints.insert(std::make_pair(e.first, std::make_shared<PrimaryKeyConstraint>(*std::dynamic_pointer_cast<PrimaryKeyConstraint>(e.second))));
+        else
+            m_indexConstraints.insert(std::make_pair(e.first, std::make_shared<UniqueConstraint>(*e.second)));
+    }
+    for(const auto& e : rhs.m_foreignKeys)
+        m_foreignKeys.insert(std::make_pair(e.first, std::make_shared<ForeignKeyClause>(*e.second)));
+    std::transform(rhs.m_checkConstraints.begin(), rhs.m_checkConstraints.end(), std::back_inserter(m_checkConstraints), [](const auto& e) { return std::make_shared<CheckConstraint>(*e); });
 
     return *this;
 }
@@ -370,13 +297,17 @@ bool Table::operator==(const Table& rhs) const
     if(!Object::operator==(rhs))
         return false;
 
-    if(m_withoutRowid != rhs.m_withoutRowid)
+    if(m_options != rhs.m_options)
         return false;
     if(m_virtual != rhs.m_virtual)
         return false;
     if(fields != rhs.fields)
         return false;
-    if(m_constraints != rhs.m_constraints)
+    if(m_indexConstraints != rhs.m_indexConstraints)
+        return false;
+    if(m_foreignKeys != rhs.m_foreignKeys)
+        return false;
+    if(m_checkConstraints != rhs.m_checkConstraints)
         return false;
 
     return true;
@@ -385,38 +316,28 @@ bool Table::operator==(const Table& rhs) const
 StringVector Table::fieldList() const
 {
     StringVector sl;
-
-    for(const Field& f : fields)
-        sl.push_back(f.toString());
-
+    std::transform(fields.begin(), fields.end(), std::back_inserter(sl), [](const auto& f) { return f.toString(); });
     return sl;
 }
 
 StringVector Table::fieldNames() const
 {
     StringVector sl;
-
-    for(const Field& f : fields)
-        sl.push_back(f.name());
-
+    std::transform(fields.begin(), fields.end(), std::back_inserter(sl), [](const auto& f) { return f.name(); });
     return sl;
 }
 
 StringVector Table::rowidColumns() const
 {
     // For WITHOUT ROWID tables this function returns the names of the primary key column. For ordinary tables with a rowid column, it returns "_rowid_"
-    if(m_withoutRowid)
-        return const_cast<Table*>(this)->primaryKey()->columnList();
-    else
+    if(withoutRowidTable())
+    {
+        auto columns = primaryKeyColumns();
+        StringVector result;
+        std::transform(columns.begin(), columns.end(), std::back_inserter(result), [](const auto& e) { return e.name(); });
+        return result;
+    } else
         return {"_rowid_"};
-}
-
-FieldInfoList Table::fieldInformation() const
-{
-    FieldInfoList result;
-    for(const Field& f : fields)
-        result.emplace_back(f.name(), f.type(), f.toString("  ", " "));
-    return result;
 }
 
 TablePtr Table::parseSQL(const std::string& sSQL)
@@ -429,7 +350,9 @@ TablePtr Table::parseSQL(const std::string& sSQL)
         return t;
     } else {
         std::cerr << "Sqlite parse error: " << sSQL << std::endl;
-        return std::make_shared<Table>("");
+        TablePtr t = std::make_shared<Table>("");
+        t->setOriginalSql(sSQL);
+        return t;
     }
 }
 
@@ -449,128 +372,157 @@ std::string Table::sql(const std::string& schema, bool ifNotExists) const
     sql += joinStringVector(fieldList(), ",\n");
 
     // Constraints
-    for(const auto& it : m_constraints)
-    {
-        // Ignore all constraints without any fields, except for check constraints which don't rely on a field vector
-        if(!it->columnList().empty() || it->type() == Constraint::CheckConstraintType)
-        {
-            sql += ",\n\t";
-            sql += it->toSql();
-        }
-    }
+    for(const auto& it : m_indexConstraints)
+        sql += ",\n\t" + it.second->toSql(it.first);
+    for(const auto& it : m_foreignKeys)
+        sql += ",\n\t" + it.second->toSql(it.first);
+    for(const auto& it : m_checkConstraints)
+        sql += ",\n\t" + it->toSql();
 
     sql += "\n)";
 
-    // without rowid
-    if(withoutRowidTable())
-        sql += " WITHOUT ROWID";
+    // Table options
+    bool first_option = true;
+    for(size_t i=0;i<NumOptions;i++)
+    {
+        if(m_options.test(i))
+        {
+            if(first_option)
+            {
+                sql += " ";
+                first_option = false;
+            } else {
+                sql += ",";
+            }
+
+            switch(i)
+            {
+            case WithoutRowid:
+                sql += "WITHOUT ROWID";
+                break;
+            case Strict:
+                sql += "STRICT";
+                break;
+            }
+        }
+    }
 
     return sql + ";";
 }
 
-void Table::addConstraint(ConstraintPtr constraint)
+void Table::addConstraint(const StringVector& columns, std::shared_ptr<PrimaryKeyConstraint> constraint)
 {
-    m_constraints.insert(constraint);
+    IndexedColumnVector c;
+    std::transform(columns.begin(), columns.end(), std::back_inserter(c), [](const auto& e) { return IndexedColumn(e, false); });
+    m_indexConstraints.insert(std::make_pair(c, constraint));
 }
 
-void Table::setConstraint(ConstraintPtr constraint)
+void Table::addConstraint(const StringVector& columns, std::shared_ptr<UniqueConstraint> constraint)
 {
-    // Delete any old constraints of this type for these fields
-    removeConstraints(constraint->columnList(), constraint->type());
-
-    // Add the new constraint to the table, effectively overwriting all old constraints for that fields/type combination
-    addConstraint(constraint);
+    IndexedColumnVector c;
+    std::transform(columns.begin(), columns.end(), std::back_inserter(c), [](const auto& e) { return IndexedColumn(e, false); });
+    m_indexConstraints.insert(std::make_pair(c, constraint));
 }
 
-void Table::removeConstraint(ConstraintPtr constraint)
+void Table::addConstraint(const IndexedColumnVector& columns, std::shared_ptr<ForeignKeyClause> constraint)
 {
-    for(auto it = m_constraints.begin();it!=m_constraints.end();++it)
+    StringVector c;
+    std::transform(columns.begin(), columns.end(), std::back_inserter(c), [](const auto& e) { return e.name(); });
+    m_foreignKeys.insert(std::make_pair(c, constraint));
+}
+
+void Table::removeConstraint(std::shared_ptr<UniqueConstraint> constraint)
+{
+    auto c = std::find_if(m_indexConstraints.begin(), m_indexConstraints.end(), [constraint](const auto& e) { return e.second == constraint; });
+    if(c != m_indexConstraints.end())
+        m_indexConstraints.erase(c);
+}
+
+void Table::removeConstraint(std::shared_ptr<ForeignKeyClause> constraint)
+{
+    auto c = std::find_if(m_foreignKeys.begin(), m_foreignKeys.end(), [constraint](const auto& e) { return e.second == constraint; });
+    if(c != m_foreignKeys.end())
+        m_foreignKeys.erase(c);
+}
+
+void Table::removeConstraint(std::shared_ptr<CheckConstraint> constraint)
+{
+    m_checkConstraints.erase(std::remove_if(m_checkConstraints.begin(), m_checkConstraints.end(), [constraint](const auto& e) { return e == constraint; }));
+}
+
+void Table::addKeyToConstraint(std::shared_ptr<UniqueConstraint> constraint, const std::string& key)
+{
+    // Search for matching constraint
+    for(auto it=m_indexConstraints.begin();it!=m_indexConstraints.end();++it)
     {
-        if((*it)->toSql() == constraint->toSql())
+        if(it->second == constraint)
         {
-            m_constraints.erase(it);
+            // Add key to the column list
+            auto new_columns = it->first;
+            new_columns.emplace_back(key, false);
 
-            // Only remove the first constraint matching these criteria
-            return;
+            m_indexConstraints.insert(std::make_pair(new_columns, it->second));
+            it = m_indexConstraints.erase(it);
         }
     }
 }
 
-void Table::removeConstraints(const StringVector& vStrFields, Constraint::ConstraintTypes type)
+void Table::removeKeyFromConstraint(std::shared_ptr<UniqueConstraint> constraint, const std::string& key)
 {
-    for(auto it = m_constraints.begin();it!=m_constraints.end();)
+    for(auto it=m_indexConstraints.begin();it!=m_indexConstraints.end();++it)
     {
-        if((*it)->columnList() == vStrFields && (*it)->type() == type)
-            m_constraints.erase(it++);
-        else
-            ++it;
+        if(it->second == constraint)
+        {
+            // Remove key from the column list
+            std::remove_const_t<decltype(it->first)> new_columns;
+            std::copy_if(it->first.begin(), it->first.end(), std::back_inserter(new_columns), [key](const auto& c) { return c != key; });
+
+            // If the column list is empty now, remove the entire constraint. Otherwise save the updated column list
+            if(new_columns.empty())
+            {
+                it = m_indexConstraints.erase(it);
+            } else {
+                m_indexConstraints.insert(std::make_pair(new_columns, it->second));
+                it = m_indexConstraints.erase(it);
+            }
+
+            // If container is empty now, return here instead of advancing the iterator
+            if(m_indexConstraints.empty())
+                return;
+        }
     }
-}
-
-ConstraintPtr Table::constraint(const StringVector& vStrFields, Constraint::ConstraintTypes type) const
-{
-    auto list = constraints(vStrFields, type);
-    if(list.size())
-        return list.at(0);
-    else
-        return ConstraintPtr(nullptr);
-}
-
-std::vector<ConstraintPtr> Table::constraints(const StringVector& vStrFields, Constraint::ConstraintTypes type) const
-{
-    std::vector<ConstraintPtr> clist;
-    for(const auto& it : m_constraints)
-    {
-        if((type == Constraint::NoType || it->type() == type) && (vStrFields.empty() || it->columnList() == vStrFields))
-            clist.push_back(it);
-    }
-    return clist;
-}
-
-void Table::setConstraints(const ConstraintSet& constraints)
-{
-    m_constraints = constraints;
-}
-
-void Table::replaceConstraint(ConstraintPtr from, ConstraintPtr to)
-{
-    auto it = m_constraints.find(from);
-    if(it == m_constraints.end())
-            return;
-
-    m_constraints.erase(it);    // Erase old constraint
-    m_constraints.insert(to);   // Insert new constraint
-}
-
-std::shared_ptr<PrimaryKeyConstraint> Table::primaryKey()
-{
-    const auto c = constraint({}, Constraint::PrimaryKeyConstraintType);
-    if(c)
-        return std::dynamic_pointer_cast<PrimaryKeyConstraint>(c);
-    else
-        return nullptr;
 }
 
 void Table::removeKeyFromAllConstraints(const std::string& key)
 {
-    // Update all constraints
-    for(auto it=m_constraints.begin();it!=m_constraints.end();)
-    {
+    auto match_and_remove = [key](auto& container, auto& it) {
         // Check if they contain the old key name
-        if(contains((*it)->columnList(), key))
+        if(contains(it->first, key))
         {
             // If so, remove it from the column list
-            (*it)->removeFromColumnList(key);
+            std::remove_const_t<decltype(it->first)> new_columns;
+            std::copy_if(it->first.begin(), it->first.end(), std::back_inserter(new_columns), [key](const auto& c) { return c != key; });
 
             // If the column list is empty now, remove the entire constraint. Otherwise save the updated column list
-            if((*it)->columnList().empty())
-                it = m_constraints.erase(it);
-            else
-                ++it;
-        } else {
-            ++it;
+            if(new_columns.empty())
+            {
+                it = container.erase(it);
+            } else {
+                container.insert(std::make_pair(new_columns, it->second));
+                it = container.erase(it);
+            }
+
+            // If container is empty now, return here instead of advancing the iterator
+            if(container.empty())
+                return;
         }
-    }
+    };
+
+    for(auto it=m_indexConstraints.begin();it!=m_indexConstraints.end();++it)
+        match_and_remove(m_indexConstraints, it);
+
+    for(auto it=m_foreignKeys.begin();it!=m_foreignKeys.end();++it)
+        match_and_remove(m_foreignKeys, it);
 }
 
 void Table::renameKeyInAllConstraints(const std::string& key, const std::string& to)
@@ -579,14 +531,58 @@ void Table::renameKeyInAllConstraints(const std::string& key, const std::string&
     if(key == to)
         return;
 
-    // Find all occurrences of the key and change it to the new one
-    for(auto& it : m_constraints)
+    const auto match_and_rename = [key, to](auto& container, auto& it, const auto& rename) {
+        // Check if they contain the old key name
+        if(contains(it->first, key))
+        {
+            // If so, update it in the column list
+            std::remove_const_t<decltype(it->first)> new_columns;
+            std::transform(it->first.begin(), it->first.end(), std::back_inserter(new_columns), [rename](auto c) {
+                return rename(c);
+            });
+
+            container.insert(std::make_pair(new_columns, it->second));
+            it = container.erase(it);
+        }
+    };
+
+    // Update all constraints
+    for(auto it=m_indexConstraints.begin();it!=m_indexConstraints.end();++it)
     {
-        if(contains(it->columnList(), key))
-            it->replaceInColumnList(key, to);
+        match_and_rename(m_indexConstraints, it, [key, to](IndexedColumn c) {
+            if(c == key)
+                c.setName(to);
+            return c;
+        });
     }
+
+    for(auto it=m_foreignKeys.begin();it!=m_foreignKeys.end();++it)
+        match_and_rename(m_foreignKeys, it, [key, to](const std::string& c) { return c == key ? to : c; });
 }
 
+std::shared_ptr<PrimaryKeyConstraint> Table::primaryKey() const
+{
+    const auto it = std::find_if(m_indexConstraints.begin(), m_indexConstraints.end(), [](const auto& e) { return e.second->isPrimaryKey(); });
+    if(it != m_indexConstraints.end())
+        return std::dynamic_pointer_cast<PrimaryKeyConstraint>(it->second);
+    return nullptr;
+}
+
+IndexedColumnVector Table::primaryKeyColumns() const
+{
+    const auto it = std::find_if(m_indexConstraints.begin(), m_indexConstraints.end(), [](const auto& e) { return e.second->isPrimaryKey(); });
+    if(it != m_indexConstraints.end())
+        return it->first;
+    return {};
+}
+
+std::shared_ptr<ForeignKeyClause> Table::foreignKey(const StringVector& columns) const
+{
+    const auto it = std::find_if(m_foreignKeys.begin(), m_foreignKeys.end(), [columns](const auto& e) { return e.first == columns; });
+    if(it != m_foreignKeys.end())
+        return it->second;
+    return nullptr;
+}
 
 
 std::string IndexedColumn::toString(const std::string& indent, const std::string& sep) const
@@ -615,10 +611,7 @@ Index& Index::operator=(const Index& rhs)
 StringVector Index::columnSqlList() const
 {
     StringVector sl;
-
-    for(const IndexedColumn& c : fields)
-        sl.push_back(c.toString());
-
+    std::transform(fields.begin(), fields.end(), std::back_inserter(sl), [](const auto& c) { return c.toString(); });
     return sl;
 }
 
@@ -648,14 +641,6 @@ std::string Index::sql(const std::string& schema, bool ifNotExists) const
     return sql + ";";
 }
 
-FieldInfoList Index::fieldInformation() const
-{
-    FieldInfoList result;
-    for(const IndexedColumn& c : fields)
-        result.emplace_back(c.name(), c.order(), c.toString("  ", " "));
-    return result;
-}
-
 IndexPtr Index::parseSQL(const std::string& sSQL)
 {
     parser::ParserDriver drv;
@@ -666,8 +651,16 @@ IndexPtr Index::parseSQL(const std::string& sSQL)
         return i;
     } else {
         std::cerr << "Sqlite parse error: " << sSQL << std::endl;
-        return std::make_shared<Index>("");
+        IndexPtr i = std::make_shared<Index>("");
+        i->setOriginalSql(sSQL);
+        return i;
     }
+}
+
+template<>
+std::string getBaseTable<Index>(IndexPtr object)
+{
+    return object->table();
 }
 
 
@@ -681,24 +674,6 @@ ViewPtr View::parseSQL(const std::string& sSQL)
     return v;
 }
 
-StringVector View::fieldNames() const
-{
-    StringVector sl;
-
-    for(const Field& f : fields)
-        sl.push_back(f.name());
-
-    return sl;
-}
-
-FieldInfoList View::fieldInformation() const
-{
-    FieldInfoList result;
-    for(const Field& f : fields)
-        result.emplace_back(f.name(), f.type(), f.toString("  ", " "));
-    return result;
-}
-
 
 TriggerPtr Trigger::parseSQL(const std::string& sSQL)
 {
@@ -707,6 +682,12 @@ TriggerPtr Trigger::parseSQL(const std::string& sSQL)
     auto t = std::make_shared<Trigger>("");
     t->setOriginalSql(sSQL);
     return t;
+}
+
+template<>
+std::string getBaseTable<Trigger>(TriggerPtr object)
+{
+    return object->table();
 }
 
 } //namespace sqlb

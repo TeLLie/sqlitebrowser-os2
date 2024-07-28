@@ -34,11 +34,12 @@ public:
 
 private slots:
     void loadSettings();
-    void saveSettings();
+    void saveSettings(bool accept=true);
 
     void chooseLocation();
     void showColourDialog(QTreeWidgetItem* item, int column);
     void addExtension();
+    void createBuiltinExtensionList();
     void removeExtension();
     void activateRemoteTab(bool active);
     void addClientCertificate();
@@ -48,8 +49,8 @@ private slots:
     void adjustColorsToStyle(int style);
     void configureProxy();
 
-    void on_buttonManageFileExtension_clicked();
-    void on_buttonBox_clicked(QAbstractButton* button);
+    void showFileExtensionManager();
+    void buttonBoxClicked(QAbstractButton* button);
 
 private:
     Ui::PreferencesDialog* ui;
@@ -63,6 +64,8 @@ private:
     void setColorSetting(QFrame* frame, const QColor &color);
     void saveColorSetting(QFrame* frame, const std::string& name);
     void addClientCertToTable(const QString& path, const QSslCertificate& cert);
+    void exportSettings();
+    void importSettings();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

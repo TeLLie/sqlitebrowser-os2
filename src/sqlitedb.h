@@ -25,7 +25,19 @@ enum LogMessageType
     kLogMsg_ErrorLog
 };
 
-using objectMap = std::multimap<std::string, sqlb::ObjectPtr>;  // Maps from object type (table, index, view, trigger) to a pointer to the object representation
+struct objectMap
+{
+    // These map from object name to object pointer
+    std::map<std::string, sqlb::TablePtr> tables;       // This stores tables AND views
+    std::map<std::string, sqlb::IndexPtr> indices;
+    std::map<std::string, sqlb::TriggerPtr> triggers;
+
+    bool empty() const
+    {
+        return tables.empty() && indices.empty() && triggers.empty();
+    }
+};
+
 using schemaMap = std::map<std::string, objectMap>;             // Maps from the schema name (main, temp, attached schemas) to the object map for that schema
 
 int collCompare(void* pArg, int sizeA, const void* sA, int sizeB, const void* sB);
@@ -34,6 +46,7 @@ namespace sqlb
 {
 QString escapeIdentifier(const QString& id);
 QString escapeString(const QString& literal);
+QString escapeByteArray(const QByteArray& literal);
 }
 
 /// represents a single SQLite database. except when noted otherwise,
@@ -51,7 +64,7 @@ private:
 
         DBBrowserDB * pParent;
 
-        void operator() (sqlite3 * db) const
+        void operator() (const sqlite3* db) const
         {
             if(!db || !pParent)
                 return;
@@ -71,8 +84,16 @@ public:
 
     bool open(const QString& db, bool readOnly = false);
     bool attach(const QString& filename, QString attach_as = QString());
+
+    /**
+      detaches a previously attached database identified with its alias-name
+
+      \param attached_as the alias-name as witch a additional database file has been attached to the connection
+    **/
+    bool detach(const std::string& attached_as);
     bool create ( const QString & db);
     bool close();
+    bool saveAs(const std::string& filename);
 
     // This returns the SQLite version as well as the SQLCipher if DB4S is compiled with encryption support
     static void getSqliteVersion(QString& sqlite, QString& sqlcipher);
@@ -102,13 +123,19 @@ public:
     **/
     db_pointer_type get (const QString& user, bool force_wait = false);
 
-    bool setSavepoint(const std::string& pointname = "RESTOREPOINT");
+    bool setSavepoint(const std::string& pointname = "RESTOREPOINT", bool unique = true);
     bool releaseSavepoint(const std::string& pointname = "RESTOREPOINT");
     bool revertToSavepoint(const std::string& pointname = "RESTOREPOINT");
     bool releaseAllSavepoints();
     bool revertAll();
 
-    bool dump(const QString& filename, const std::vector<std::string>& tablesToDump, bool insertColNames, bool insertNew, bool exportSchema, bool exportData, bool keepOldSchema) const;
+    // Set a non-unique savepoint for the general undoing mechanism (undoing only last write).
+    bool setUndoSavepoint() { return setSavepoint("UNDOPOINT", /* unique */ false); };
+    bool revertToUndoSavepoint() { return revertToSavepoint("UNDOPOINT"); };
+    bool releaseUndoSavepoint() { return releaseSavepoint("UNDOPOINT"); };
+
+    bool dump(const QString& filename, const std::vector<std::string>& tablesToDump,
+              bool insertColNames, bool insertNew, bool keepOriginal, bool exportSchema, bool exportData, bool keepOldSchema) const;
 
     enum ChoiceOnUse
     {
@@ -144,7 +171,7 @@ public:
     bool getRow(const sqlb::ObjectIdentifier& table, const QString& rowid, std::vector<QByteArray>& rowdata) const;
 
     /**
-     * @brief Interrupts the currenty running statement as soon as possible.
+     * @brief Interrupts the currently running statement as soon as possible.
      */
     void interruptQuery();
 
@@ -173,8 +200,8 @@ private:
 
 public:
     QString addRecord(const sqlb::ObjectIdentifier& tablename);
-    bool deleteRecords(const sqlb::ObjectIdentifier& table, const std::vector<QString>& rowids, const sqlb::StringVector& pseudo_pk = {});
-    bool updateRecord(const sqlb::ObjectIdentifier& table, const std::string& column, const QString& rowid, const QByteArray& value, int force_type = 0, const sqlb::StringVector& pseudo_pk = {});
+    bool deleteRecords(const sqlb::ObjectIdentifier& table, const std::vector<QByteArray>& rowids, const sqlb::StringVector& pseudo_pk = {});
+    bool updateRecord(const sqlb::ObjectIdentifier& table, const std::string& column, const QByteArray& rowid, const QByteArray& value, int force_type = 0, const sqlb::StringVector& pseudo_pk = {});
 
     bool createTable(const sqlb::ObjectIdentifier& name, const sqlb::FieldVector& structure);
     bool renameTable(const std::string& schema, const std::string& from_table, const std::string& to_table);
@@ -201,15 +228,34 @@ public:
      */
     bool alterTable(const sqlb::ObjectIdentifier& tablename, const sqlb::Table& new_table, AlterTableTrackColumns track_columns, std::string newSchemaName = std::string());
 
-    template<typename T = sqlb::Object>
-    const std::shared_ptr<T> getObjectByName(const sqlb::ObjectIdentifier& name) const
+    const sqlb::TablePtr getTableByName(const sqlb::ObjectIdentifier& name) const
     {
-        for(auto& it : schemata.at(name.schema()))
-        {
-            if(it.second->name() == name.name())
-                return std::dynamic_pointer_cast<T>(it.second);
-        }
-        return std::shared_ptr<T>();
+        if(schemata.empty() || name.schema().empty() || !schemata.count(name.schema()))
+            return sqlb::TablePtr{};
+        const auto& schema = schemata.at(name.schema());
+        if(schema.tables.count(name.name()))
+            return schema.tables.at(name.name());
+        return sqlb::TablePtr{};
+    }
+
+    const sqlb::IndexPtr getIndexByName(const sqlb::ObjectIdentifier& name) const
+    {
+        if(schemata.empty() || name.schema().empty())
+            return sqlb::IndexPtr{};
+        const auto& schema = schemata.at(name.schema());
+        if(schema.indices.count(name.name()))
+            return schema.indices.at(name.name());
+        return sqlb::IndexPtr{};
+    }
+
+    const sqlb::TriggerPtr getTriggerByName(const sqlb::ObjectIdentifier& name) const
+    {
+        if(schemata.empty() || name.schema().empty())
+            return sqlb::TriggerPtr{};
+        const auto& schema = schemata.at(name.schema());
+        if(schema.triggers.count(name.name()))
+            return schema.triggers.at(name.name());
+        return sqlb::TriggerPtr{};
     }
 
     bool isOpen() const;
@@ -230,6 +276,7 @@ public:
     void loadExtensionsFromSettings();
 
     static QStringList Datatypes;
+    static QStringList DatatypesStrict;
 
 private:
     std::vector<std::pair<std::string, std::string> > queryColumnInformation(const std::string& schema_name, const std::string& object_name) const;
@@ -274,15 +321,15 @@ private:
     void collationNeeded(void* pData, sqlite3* db, int eTextRep, const char* sCollationName);
     void errorLogCallback(void* user_data, int error_code, const char* message);
 
-    bool tryEncryptionSettings(const QString& filename, bool* encrypted, CipherSettings*& cipherSettings) const;
+    bool tryEncryptionSettings(const QString& filename, bool* encrypted, CipherSettings* cipherSettings) const;
 
-    bool dontCheckForStructureUpdates;
+    bool disableStructureUpdateChecks;
 
     class NoStructureUpdateChecks
     {
     public:
-        explicit NoStructureUpdateChecks(DBBrowserDB& db) : m_db(db) { m_db.dontCheckForStructureUpdates = true; }
-        ~NoStructureUpdateChecks() { m_db.dontCheckForStructureUpdates = false; }
+        explicit NoStructureUpdateChecks(DBBrowserDB& db) : m_db(db) { m_db.disableStructureUpdateChecks = true; }
+        ~NoStructureUpdateChecks() { m_db.disableStructureUpdateChecks = false; }
 
     private:
           DBBrowserDB& m_db;
