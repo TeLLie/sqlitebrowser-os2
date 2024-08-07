@@ -409,7 +409,7 @@ qt5_add_resources(SQLB_RESOURCES_RCC ${SQLB_RESOURCES})
 if (OS2)
 enable_language(RC)
 set_source_files_properties("src/os2app.rc" PROPERTIES LANGUAGE RC) 
-set(SQLB_SRC ${SQLB_SRC} "src/os2app.rc")
+set(SQLB_MISC ${SQLB_MISC} "src/os2app.rc")
 endif()
 
 if(WIN32)
@@ -454,7 +454,7 @@ else(EXTRAPATH)
 	find_library(LIBSQLITE ${LIBSQLITE_NAME})
 endif(EXTRAPATH)
 
-if(WIN32 AND MSVC AND OS2)
+if(WIN32 AND MSVC)
 	find_path(SQLITE3_INCLUDE_DIR sqlite3.h)
 	if(sqlcipher)
 		find_file(SQLITE3_DLL sqlcipher.dll)
@@ -573,7 +573,7 @@ if(UNIX)
     )
 endif()
 
-if(WIN32 AND MSVC AND OS2)
+if(WIN32 AND MSVC)
     install(TARGETS ${PROJECT_NAME}
         RUNTIME DESTINATION "/"
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
