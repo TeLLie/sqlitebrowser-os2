@@ -30,7 +30,6 @@
 
 #include <chrono>
 #include <QFile>
-#include <QSaveFile>
 #include <QTextStream>
 #include <QWhatsThis>
 #include <QMessageBox>
@@ -52,6 +51,7 @@
 #include <QPushButton>
 #include <QTemporaryFile>
 #include <QToolButton>
+#include <QUrl>
 
 #ifdef Q_OS_MACX //Needed only on macOS
     #include <QOpenGLWidget>
@@ -79,8 +79,10 @@ MainWindow::MainWindow(QWidget* parent)
     activateFields(false);
     updateRecentFileActions();
 
-    if (Settings::getValue("General", "autoLoadLastDBFileAtStartup").toBool())
+    if (!Settings::getValue("tmp", "fileWillBeOpenedFromCLI").toBool() &&
+        Settings::getValue("General", "autoLoadLastDBFileAtStartup").toBool()) {
         recentFileActs[0]->trigger();
+    }
 }
 
 MainWindow::~MainWindow()
@@ -560,6 +562,9 @@ bool MainWindow::fileOpen(const QString& fileName, bool openFromProject, bool re
                     // When a new DB file has been open while a project is open, set the project modified.
                     if(!currentProjectFilename.isEmpty())
                         isProjectModified = true;
+                } else {
+                    // loadProject will init the rest
+                    return true;
                 }
                 if(ui->tabSqlAreas->count() == 0)
                     openSqlTab(true);
@@ -799,12 +804,11 @@ bool MainWindow::closeFiles()
 
     bool projectClosed = closeProject();
 
-    if (projectClosed) {
-        // Now all tabs can be closed at once without asking user.
-        // Close tabs in reverse order (so indexes are not changed in the process).
-        for(int i=ui->tabSqlAreas->count()-1; i>=0; i--)
-            closeSqlTab(i, /* force */ true, /* askSaving */ false);
-    }
+    // Now all tabs can be closed at once without asking user.
+    // Close tabs in reverse order (so indexes are not changed in the process).
+    for(int i=ui->tabSqlAreas->count()-1; i>=0; i--)
+        closeSqlTab(i, /* force */ true, /* askSaving */ false);
+
     return projectClosed;
 }
 
@@ -1236,9 +1240,11 @@ void MainWindow::executeQuery()
     // Get the statement(s) to execute. When in selection mode crop the query string at exactly the end of the selection to make sure SQLite has
     // no chance to execute any further.
     QString sql = sqlWidget->getSql();
-    if(mode == Selection)
-        sql = sql.toUtf8().left(execute_to_position);   // We have to convert to a QByteArray here because QScintilla gives us the position in bytes, not in characters.
-
+    if(mode == Selection) {
+        // We have to convert to a QByteArray here because QScintilla gives us the position in bytes, not in characters.
+        // We also have to replace the characters before execute_from_position by spaces, so that they count as bytes and not multibyte characters.
+        sql = sql.toUtf8().replace(0, execute_from_position, QString(" ").repeated(execute_from_position).toUtf8()).left(execute_to_position);
+    }
     // Prepare the SQL worker to run the query. We set the context of each signal-slot connection to the current SQL execution area.
     // This means that if the tab is closed all these signals are automatically disconnected so the lambdas won't be called for a not
     // existing execution area.
@@ -1971,9 +1977,9 @@ void MainWindow::updatePragmaUi()
     ui->checkboxPragmaForeignKeys->setChecked(pragmaValues.foreign_keys);
     ui->checkboxPragmaFullFsync->setChecked(pragmaValues.fullfsync);
     ui->checkboxPragmaIgnoreCheckConstraints->setChecked(pragmaValues.ignore_check_constraints);
-    ui->comboboxPragmaJournalMode->setCurrentIndex(ui->comboboxPragmaJournalMode->findText(pragmaValues.journal_mode, Qt::MatchFixedString));
+    ui->comboboxPragmaJournalMode->setCurrentIndex(DBBrowserDB::journalModeValues.indexOf(pragmaValues.journal_mode));
     ui->spinPragmaJournalSizeLimit->setValue(pragmaValues.journal_size_limit);
-    ui->comboboxPragmaLockingMode->setCurrentIndex(ui->comboboxPragmaLockingMode->findText(pragmaValues.locking_mode, Qt::MatchFixedString));
+    ui->comboboxPragmaLockingMode->setCurrentIndex(DBBrowserDB::lockingModeValues.indexOf(pragmaValues.locking_mode));
     ui->spinPragmaMaxPageCount->setValue(pragmaValues.max_page_count);
     ui->comboPragmaPageSize->setCurrentIndex(ui->comboPragmaPageSize->findText(QString::number(pragmaValues.page_size), Qt::MatchFixedString));
     ui->checkboxPragmaRecursiveTriggers->setChecked(pragmaValues.recursive_triggers);
@@ -2001,9 +2007,15 @@ void MainWindow::savePragmas()
     db.setPragma("foreign_keys", ui->checkboxPragmaForeignKeys->isChecked(), pragmaValues.foreign_keys);
     db.setPragma("fullfsync", ui->checkboxPragmaFullFsync->isChecked(), pragmaValues.fullfsync);
     db.setPragma("ignore_check_constraints", ui->checkboxPragmaIgnoreCheckConstraints->isChecked(), pragmaValues.ignore_check_constraints);
-    db.setPragma("journal_mode", ui->comboboxPragmaJournalMode->currentText().toUpper(), pragmaValues.journal_mode);
+
+    // Since we allow translation of UI combobox text and journal_mode and locking_mode pragmas
+    // need text values, we get the text value according to index.
+    // For this to work, order in journalModeValues and combo-box have to follow the order
+    // determined by SQLite documentation.
+    db.setPragma("journal_mode", DBBrowserDB::journalModeValues.at(ui->comboboxPragmaJournalMode->currentIndex()), pragmaValues.journal_mode);
     db.setPragma("journal_size_limit", ui->spinPragmaJournalSizeLimit->value(), pragmaValues.journal_size_limit);
-    db.setPragma("locking_mode", ui->comboboxPragmaLockingMode->currentText().toUpper(), pragmaValues.locking_mode);
+    db.setPragma("locking_mode", DBBrowserDB::lockingModeValues.at(ui->comboboxPragmaLockingMode->currentIndex()), pragmaValues.locking_mode);
+
     db.setPragma("max_page_count", ui->spinPragmaMaxPageCount->value(), pragmaValues.max_page_count);
     db.setPragma("page_size", ui->comboPragmaPageSize->currentText().toInt(), pragmaValues.page_size);
     db.setPragma("recursive_triggers", ui->checkboxPragmaRecursiveTriggers->isChecked(), pragmaValues.recursive_triggers);
@@ -2713,6 +2725,8 @@ MainWindow::LoadAttempResult MainWindow::loadProject(QString filename, bool read
         addToRecentFilesMenu(filename, readOnly);
         currentProjectFilename = filename;
 
+        int projectRestoreIdx = -1;
+        QString projectRestoreTabs;
         while(!xml.atEnd() && !xml.hasError())
         {
             // Read next token
@@ -2764,16 +2778,14 @@ MainWindow::LoadAttempResult MainWindow::loadProject(QString filename, bool read
                     // Window settings
                     while(xml.readNext() != QXmlStreamReader::EndElement && xml.name() != "window")
                     {
-                        if(xml.name() == "main_tabs") {
-                            // Currently open tabs
-                            restoreOpenTabs(xml.attributes().value("open").toString());
-                            // Currently selected open tab
-                            ui->mainTab->setCurrentIndex(xml.attributes().value("current").toString().toInt());
+                        if(xml.name() == QT_UNICODE_LITERAL("main_tabs")) {
+                            projectRestoreTabs = xml.attributes().value("open").toString();
+                            projectRestoreIdx = xml.attributes().value("current").toString().toInt();
                             xml.skipCurrentElement();
                         } else if(xml.name() == "current_tab") {
                             // Currently selected tab (3.11 or older format, first restore default open tabs)
-                            restoreOpenTabs(defaultOpenTabs);
-                            ui->mainTab->setCurrentIndex(xml.attributes().value("id").toString().toInt());
+                            projectRestoreTabs = defaultOpenTabs;
+                            projectRestoreIdx = xml.attributes().value("id").toString().toInt();
                             xml.skipCurrentElement();
                         }
                     }
@@ -2903,7 +2915,6 @@ MainWindow::LoadAttempResult MainWindow::loadProject(QString filename, bool read
                         } else {
                             xml.skipCurrentElement();
                         }
-
                     }
                 } else if(xml.name() == "tab_sql") {
                     // Close all open tabs first
@@ -2941,12 +2952,20 @@ MainWindow::LoadAttempResult MainWindow::loadProject(QString filename, bool read
 
         file.close();
 
-        if(ui->mainTab->currentWidget() == ui->browser) {
-            refreshTableBrowsers();     // Refresh view
+        if (projectRestoreIdx != -1 && !projectRestoreTabs.isEmpty()) {
+            ui->mainTab->blockSignals(true);
+            restoreOpenTabs(projectRestoreTabs);
+            ui->mainTab->blockSignals(false);
+            ui->mainTab->setCurrentIndex(projectRestoreIdx);
         }
 
-        isProjectModified = false;
-
+        // This is done because on consecutive reloads,
+        // we have events in queue which will activate
+        // &TableBrowser::projectModified,
+        // append ourselves after those events
+        QMetaObject::invokeMethod(this, [this] {
+            isProjectModified = false;
+        }, Qt::QueuedConnection);
         return !xml.hasError()? Success : Aborted;
     } else {
         // No project was opened
@@ -3096,7 +3115,7 @@ void MainWindow::saveProject(const QString& currentFilename)
         if(!filename.endsWith(FILE_EXT_SQLPRJ_DEFAULT, Qt::CaseInsensitive))
             filename.append(FILE_EXT_SQLPRJ_DEFAULT);
 
-        QSaveFile file(filename);
+        QFile file(filename);
         bool opened = file.open(QFile::WriteOnly | QFile::Text);
         if(!opened) {
             QMessageBox::warning(this, qApp->applicationName(),
@@ -3229,7 +3248,7 @@ void MainWindow::saveProject(const QString& currentFilename)
 
         xml.writeEndElement();
         xml.writeEndDocument();
-        file.commit();
+        file.close();
 
         addToRecentFilesMenu(filename);
         setCurrentFile(db.currentFile());
@@ -3408,6 +3427,7 @@ void MainWindow::fileDetachTreeViewSelected(QTreeView* treeView)
         db.updateSchema();
         refreshTableBrowsers(/* all */ true);
         isProjectModified = true;
+        refresh();
     }
 }
 

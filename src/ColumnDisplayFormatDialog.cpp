@@ -1,4 +1,6 @@
 #include <QMessageBox>
+#include <QDesktopServices>
+#include <QUrl>
 
 #include "ColumnDisplayFormatDialog.h"
 #include "ui_ColumnDisplayFormatDialog.h"
@@ -170,4 +172,9 @@ void ColumnDisplayFormatDialog::setCustom(bool modified)
     // If the SQL code is modified by user, select the custom value in the combo-box
     if(modified && ui->editDisplayFormat->hasFocus())
         ui->comboDisplayFormat->setCurrentIndex(ui->comboDisplayFormat->findData("custom"));
+}
+
+void ColumnDisplayFormatDialog::help()
+{
+    QDesktopServices::openUrl(QUrl("https://github.com/sqlitebrowser/sqlitebrowser/wiki/Display-Formats"));
 }

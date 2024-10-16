@@ -58,13 +58,8 @@ done
 # Copy the icon file to the app bundle
 for TARGET in $(find build -name "DB Browser for SQL*.app" | sed -e 's/ /_/g'); do
     TARGET=$(echo $TARGET | sed -e 's/_/ /g')
-    if [ "$NIGHTLY" = "false" ]; then
     cp installer/macos/macapp.icns "$TARGET/Contents/Resources/"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile macapp.icns" "$TARGET/Contents/Info.plist"
-    else
-    cp installer/macos/macapp-nightly.icns "$TARGET/Contents/Resources/"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile macapp-nightly.icns" "$TARGET/Contents/Info.plist"
-    fi
 done
 
 # Sign the manually added extensions
@@ -79,29 +74,8 @@ done
 mv build/*.app installer/macos
 
 # Create the DMG
-export DATE=$(date +%Y%m%d)
-
-if [ "$SQLCIPHER" = "1" ]; then
-    if [ "$NIGHTLY" = "false" ]; then
-    # Continuous with SQLCipher
-    sed -i "" 's/"DB Browser for SQLCipher Nightly.app"/"DB Browser for SQLCipher-dev-'$(git rev-parse --short --verify HEAD)'.app"/' installer/macos/sqlcipher-nightly.json
-    TARGET="DB.Browser.for.SQLCipher-dev-$(git rev-parse --short --verify HEAD).dmg"
-    else
-    # Nightly with SQLCipher
-    TARGET="DB.Browser.for.SQLCipher-universal_$DATE.dmg"
-    fi
-    appdmg --quiet installer/macos/sqlcipher-nightly.json "$TARGET"
-else
-    if [ "$NIGHTLY" = "false" ]; then
-    # Continuous without SQLCipher
-    sed -i "" 's/"DB Browser for SQLite Nightly.app"/"DB Browser for SQLite-dev-'$(git rev-parse --short --verify HEAD)'.app"/' installer/macos/nightly.json
-    TARGET="DB.Browser.for.SQLite-dev-$(git rev-parse --short --verify HEAD).dmg"
-    else
-    # Nightly without SQLCipher
-    TARGET="DB.Browser.for.SQLite-universal_$DATE.dmg"
-    fi
-    appdmg --quiet installer/macos/nightly.json "$TARGET"
-fi
+TARGET="DB.Browser.for.SQLite-v3.13.1.dmg"
+appdmg --quiet installer/macos/nightly.json "$TARGET"
 
 codesign --sign "$DEV_ID" --verbose --options=runtime --timestamp "$TARGET"
 codesign -vvv --deep --strict --verbose=4 "$TARGET"

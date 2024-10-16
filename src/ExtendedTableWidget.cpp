@@ -180,6 +180,9 @@ QWidget* ExtendedTableWidgetEditorDelegate::createEditor(QWidget* parent, const 
             completer->setCompletionMode(QCompleter::PopupCompletion);
             completer->setCaseSensitivity(Qt::CaseInsensitive);
             editor->setCompleter(completer);
+
+            CompleterTabKeyPressedEventFilter* completerTabHandleFilter = new CompleterTabKeyPressedEventFilter(completer);
+            completer->popup()->installEventFilter(completerTabHandleFilter);
         }
         // Set the maximum length to the highest possible value instead of the default 32768.
         editor->setMaxLength(std::numeric_limits<int>::max());
@@ -684,9 +687,20 @@ void ExtendedTableWidget::copyMimeData(const QModelIndexList& fromIndices, QMime
                 // Text data
                 QByteArray text = bArrdata.toByteArray();
 
-                if (inSQL)
-                    result.append(sqlb::escapeString(text));
-                else {
+                if (inSQL) {
+                    // Escape string only if it isn't a number.
+                    switch(bArrdata.type()) {
+                    case QVariant::Double:
+                    case QVariant::Int:
+                    case QVariant::LongLong:
+                    case QVariant::UInt:
+                    case QVariant::ULongLong:
+                        result.append(text);
+                        break;
+                    default:
+                        result.append(sqlb::escapeString(text));
+                    }
+                } else {
                     result.append(text);
                     // Table cell data: text
                     if (text.contains('\n') || text.contains('\t'))
@@ -732,6 +746,10 @@ void ExtendedTableWidget::copyMimeData(const QModelIndexList& fromIndices, QMime
     if (!inSQL) {
         htmlResult.append("</table></body></html>");
         mimeData->setHtml(htmlResult);
+    }
+    // Single cells should only contain the value, not an ending row separator.
+    if (indices.size() == 1) {
+        result.resize(result.size() - rowSepText.size());
     }
     mimeData->setText(result);
 }
