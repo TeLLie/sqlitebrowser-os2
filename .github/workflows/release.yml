@@ -2,13 +2,9 @@ name: Release
 
 on:
     workflow_call:
-      inputs:
-        NIGHTLY:
-          default: false
-          type: boolean
 
 env:
-  tag_name: ${{ inputs.NIGHTLY == true && 'nightly' || 'continuous' }}
+  tag_name: "v3.13.1"
 
 jobs:
   release:
@@ -28,6 +24,11 @@ jobs:
         with:
           path: target
 
+      - name: Clear artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: build-artifacts-*
+
       - name: Remove unsigned Windows build
         run: rm -rfv target/*unsigned*
 
@@ -43,7 +44,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: target/*
+          draft: true
           prerelease: true
           tag_name: ${{ env.tag_name }}
-
-      # For reference: Uploading nightly builds to the nightly server is processed on the nightly server side.
